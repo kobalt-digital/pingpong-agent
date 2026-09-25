@@ -89,6 +89,8 @@ Schedule::command('backup:run --only-db')
 
 A task is known by its command and arguments, or by the name of a closure or job. Closures need a name (`->name('prune-exports')`); without one they are skipped with a log line. Tasks that run more than once a minute are ignored.
 
+**Inventory.** The first tick, and every tick after the PHP version, the Laravel version or `composer.lock` changed, carries the versions and every package the lock pins. PingPong keeps that list per server. When nothing changed, a tick carries only a hash of it.
+
 The payloads are described in [docs/payloads.md](docs/payloads.md).
 
 ## Testing
