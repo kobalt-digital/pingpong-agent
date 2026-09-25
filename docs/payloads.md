@@ -60,6 +60,12 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
         "failed_jobs": {
             "new": 0,
             "error": null
+        },
+        "queue": {
+            "connection": "redis",
+            "driver": "redis",
+            "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
+            "error": null
         }
     }
 }
@@ -111,6 +117,43 @@ Every server counts on its own, so an app on two servers reports each failed job
 |---|---|---|
 | `new` | integer or null | Number of jobs that failed since the previous tick. `null` when it could not be counted |
 | `error` | string or null | Why it could not be counted, for example a missing table, failed jobs stored outside the database (`file`, `dynamodb`, `null` driver) or an unreachable database or cache |
+
+### `signals.queue`
+
+The app's default queue connection (`queue.default`). When its driver uses workers, every tick dispatches a canary job to it and names the canary here. A worker that runs the canary reports it back with a [Canary](#canary). A canary that never comes back means no worker picks up jobs from this queue.
+
+No canary is dispatched when the driver runs jobs without a worker: `sync`, `deferred` and `background` run them in the dispatching process, `null` drops them.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `connection` | string or null | Name of the default queue connection |
+| `driver` | string or null | Driver of that connection |
+| `canary_id` | string or null | UUID of the canary this tick dispatched. `null` when none was dispatched |
+| `error` | string or null | Why the canary could not be dispatched, for example an unreachable Redis |
+
+## Canary
+
+`POST /api/agent/canary`, from the queue worker that ran the canary a tick dispatched. It is the one report that goes through the queue, since the queue is what it tests. The canary is tried once: it is not retried when the worker fails or PingPong is down, so every canary reports back at most once.
+
+```json
+{
+    "schema": 1,
+    "server": "worker-01",
+    "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
+    "dispatched_at": "2026-09-25T12:00:00.250Z",
+    "dispatched_from": "web-01",
+    "ran_at": "2026-09-25T12:00:03.500Z"
+}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `canary_id` | string | UUID from `signals.queue.canary_id` of the tick that dispatched it |
+| `dispatched_at` | string | When the tick dispatched the canary, ISO 8601 in UTC with milliseconds, by the clock of `dispatched_from` |
+| `dispatched_from` | string | Hostname of the server that dispatched the canary |
+| `ran_at` | string | When the worker ran the canary, same format, by the clock of `server` |
+
+`server` is the worker's hostname, which can differ from `dispatched_from`. Both times come from the clocks of their own servers.
 
 ## Responses
 

@@ -1,0 +1,8 @@
+{
+    "schema": 1,
+    "server": "worker-01",
+    "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
+    "dispatched_at": "2026-09-25T12:00:00.250Z",
+    "dispatched_from": "web-01",
+    "ran_at": "2026-09-25T12:00:03.500Z"
+}
