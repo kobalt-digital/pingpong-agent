@@ -42,6 +42,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
     "schema": 1,
     "server": "web-01",
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
+    "inventory_hash": "8e2b4d6f0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b",
     "signals": {
         "database": {
             "reachable": true,
@@ -81,15 +82,29 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
                 "grace": 10
             }
         }
-    ]
+    ],
+    "inventory": {
+        "php_version": "8.4.12",
+        "laravel_version": "13.2.0",
+        "packages": [
+            {
+                "name": "laravel/framework",
+                "version": "v13.2.0",
+                "dev": false
+            }
+        ],
+        "error": null
+    }
 }
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
 | `schedule_hash` | string | SHA-256 of the task list below, whether or not the list is sent |
+| `inventory_hash` | string | SHA-256 over the PHP version, the Laravel version and the bytes of `composer.lock`, whether or not the inventory is sent |
 | `signals` | object | Health signals keyed by name, always a JSON object |
 | `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
+| `inventory` | object, optional | What the app runs on. Only present when `inventory_hash` differs from the last tick PingPong accepted from this `server` |
 
 Every signal is a raw fact measured on the sending server. The Agent never decides whether a value is bad; PingPong owns the thresholds. A check that fails is reported in the signal itself, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
 
@@ -107,6 +122,20 @@ The Agent keeps the hash of the last delivered list in the app's cache, per serv
 | `cron` | string | The task's cron expression |
 | `timezone` | string | Same as in the task's Check-ins |
 | `overrides` | object | Same as in the task's Check-ins |
+
+### `inventory`
+
+Read from the `composer.lock` in the app's base path, so it lists what the lock pins, dev packages included. Like the task list, the hash of the last delivered inventory is kept in the app's cache per server, and a tick that is not delivered leaves it alone. A deploy that changes the lock, or an upgrade of PHP or Laravel, sends the inventory with the next tick.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `php_version` | string | `PHP_VERSION` of the process that sent the tick |
+| `laravel_version` | string | `app()->version()` |
+| `packages` | array or null | Every package in the lock, sorted by name. `null` when the lock is missing or unreadable |
+| `packages[].name` | string | Package name, e.g. `laravel/framework` |
+| `packages[].version` | string | Version as the lock has it, e.g. `v13.2.0` or `dev-main` |
+| `packages[].dev` | boolean | Whether the package is in `packages-dev` |
+| `error` | string or null | Why the packages could not be read |
 
 ### `signals.database`
 

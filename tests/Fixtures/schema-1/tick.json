@@ -2,6 +2,7 @@
     "schema": 1,
     "server": "web-01",
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
+    "inventory_hash": "8e2b4d6f0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b",
     "signals": {
         "database": {
             "reachable": true,
@@ -41,5 +42,17 @@
                 "grace": 10
             }
         }
-    ]
+    ],
+    "inventory": {
+        "php_version": "8.4.12",
+        "laravel_version": "13.2.0",
+        "packages": [
+            {
+                "name": "laravel/framework",
+                "version": "v13.2.0",
+                "dev": false
+            }
+        ],
+        "error": null
+    }
 }

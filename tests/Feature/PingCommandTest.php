@@ -54,6 +54,7 @@ it('sends a tick shaped like the schema 1 fixture', function () {
 
     createFailedJobsTable();
     useDatabaseQueue();
+    useComposerLock(['laravel/framework' => 'v13.2.0']);
 
     app(Schedule::class)->command('backup:run --only-db')
         ->description('Nightly database backup')

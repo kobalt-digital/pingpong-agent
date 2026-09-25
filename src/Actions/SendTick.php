@@ -3,6 +3,7 @@
 namespace KobaltDigital\PingPong\Actions;
 
 use KobaltDigital\PingPong\DeliveredHashes;
+use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
 use KobaltDigital\PingPong\Signals\CacheSignal;
 use KobaltDigital\PingPong\Signals\DatabaseSignal;
@@ -21,6 +22,7 @@ class SendTick
         private FailedJobsSignal $failedJobs,
         private QueueSignal $queue,
         private ScheduleManifest $schedule,
+        private Inventory $inventory,
         private DeliveredHashes $deliveredHashes,
     ) {}
 
@@ -32,8 +34,13 @@ class SendTick
 
         $scheduleIsNew = $this->deliveredHashes->isNew('schedule', $scheduleHash);
 
+        $inventoryHash = $this->inventory->hash();
+
+        $inventoryIsNew = $this->deliveredHashes->isNew('inventory', $inventoryHash);
+
         $payload = [
             'schedule_hash' => $scheduleHash,
+            'inventory_hash' => $inventoryHash,
             'signals' => [
                 'database' => $this->database->collect(),
                 'cache' => $this->cache->collect(),
@@ -47,12 +54,24 @@ class SendTick
             $payload['tasks'] = $tasks;
         }
 
+        if ($inventoryIsNew) {
+            $payload['inventory'] = $this->inventory->collect();
+        }
+
         $delivered = $this->transport->send('api/agent/tick', $payload);
 
-        if ($delivered && $scheduleIsNew) {
+        if (! $delivered) {
+            return false;
+        }
+
+        if ($scheduleIsNew) {
             $this->deliveredHashes->remember('schedule', $scheduleHash);
         }
 
-        return $delivered;
+        if ($inventoryIsNew) {
+            $this->deliveredHashes->remember('inventory', $inventoryHash);
+        }
+
+        return true;
     }
 }
