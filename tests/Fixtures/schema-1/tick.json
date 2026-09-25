@@ -16,6 +16,10 @@
             "free_bytes": 52613349376,
             "total_bytes": 105226698752,
             "error": null
+        },
+        "failed_jobs": {
+            "new": 0,
+            "error": null
         }
     }
 }

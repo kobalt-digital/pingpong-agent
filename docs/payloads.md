@@ -56,6 +56,10 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "free_bytes": 52613349376,
             "total_bytes": 105226698752,
             "error": null
+        },
+        "failed_jobs": {
+            "new": 0,
+            "error": null
         }
     }
 }
@@ -96,6 +100,17 @@ The disk that holds the app's base path.
 | `free_bytes` | integer or null | Free space in bytes. `null` when it could not be read |
 | `total_bytes` | integer or null | Size of the disk in bytes. `null` when it could not be read |
 | `error` | string or null | Why the disk space could not be read |
+
+### `signals.failed_jobs`
+
+Jobs that landed in the failed jobs table (`queue.failed.table`, usually `failed_jobs`) since the previous tick of this server. The Agent remembers the highest id it saw in the app's cache, per server. The first tick after install only records that id and reports `0`, so an old backlog is not reported as new. When the table was emptied since the previous tick, every row in it counts as new.
+
+Every server counts on its own, so an app on two servers reports each failed job twice, once per `server`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `new` | integer or null | Number of jobs that failed since the previous tick. `null` when it could not be counted |
+| `error` | string or null | Why it could not be counted, for example a missing table, failed jobs stored outside the database (`file`, `dynamodb`, `null` driver) or an unreachable database or cache |
 
 ## Responses
 
