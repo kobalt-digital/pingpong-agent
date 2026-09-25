@@ -21,4 +21,9 @@ class TestCase extends Orchestra
             PingPongServiceProvider::class,
         ];
     }
+
+    protected function defineEnvironment($app): void
+    {
+        $app['config']->set('cache.default', 'array');
+    }
 }
