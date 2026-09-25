@@ -1,5 +1,25 @@
 {
     "schema": 1,
     "server": "web-01",
-    "signals": {}
+    "signals": {
+        "database": {
+            "reachable": true,
+            "latency_ms": 1.84,
+            "error": null
+        },
+        "cache": {
+            "reachable": true,
+            "latency_ms": 0.42,
+            "error": null
+        },
+        "disk": {
+            "free_bytes": 52613349376,
+            "total_bytes": 105226698752,
+            "error": null
+        },
+        "failed_jobs": {
+            "new": 0,
+            "error": null
+        }
+    }
 }

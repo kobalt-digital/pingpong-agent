@@ -4,6 +4,7 @@ use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 const TICK_URL = 'https://pingpong.kobaltdigital.nl/api/agent/tick';
@@ -51,6 +52,8 @@ it('schedules nothing while the app runs its unit tests', function () {
 it('sends a tick shaped like the schema 1 fixture', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
+    createFailedJobsTable();
+
     Http::fake([TICK_URL => Http::response()]);
 
     $this->artisan('pingpong:ping')->assertSuccessful();
@@ -75,4 +78,18 @@ it('does not fail when PingPong is down', function () {
     Http::fake([TICK_URL => fn () => throw new ConnectionException('cURL error 7: Failed to connect')]);
 
     $this->artisan('pingpong:ping')->assertSuccessful();
+});
+
+it('reports a failing check in the tick instead of failing', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('database.connections.testing.database', '/nonexistent/pingpong.sqlite');
+
+    DB::purge();
+
+    Http::fake([TICK_URL => Http::response()]);
+
+    $this->artisan('pingpong:ping')->assertSuccessful();
+
+    Http::assertSent(fn (Request $request) => $request['signals']['database']['reachable'] === false
+        && $request['signals']['failed_jobs']['new'] === null);
 });

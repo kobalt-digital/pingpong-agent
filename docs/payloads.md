@@ -41,13 +41,76 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 {
     "schema": 1,
     "server": "web-01",
-    "signals": {}
+    "signals": {
+        "database": {
+            "reachable": true,
+            "latency_ms": 1.84,
+            "error": null
+        },
+        "cache": {
+            "reachable": true,
+            "latency_ms": 0.42,
+            "error": null
+        },
+        "disk": {
+            "free_bytes": 52613349376,
+            "total_bytes": 105226698752,
+            "error": null
+        },
+        "failed_jobs": {
+            "new": 0,
+            "error": null
+        }
+    }
 }
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
-| `signals` | object | Health signals keyed by name. Always a JSON object, empty until the Agent ships its first signals |
+| `signals` | object | Health signals keyed by name, always a JSON object |
+
+Every signal is a raw fact measured on the sending server. The Agent never decides whether a value is bad; PingPong owns the thresholds. A check that fails is reported in the signal itself, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
+
+### `signals.database`
+
+Runs `select 1` on the app's default database connection.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `reachable` | boolean | Whether the query succeeded |
+| `latency_ms` | float or null | Time the query took, connecting included, in milliseconds. `null` when unreachable |
+| `error` | string or null | Why the database was unreachable |
+
+### `signals.cache`
+
+Writes a random key to the app's default cache store, reads it back and removes it. The probe uses a key of its own, so it does not count the overlap lock `pingpong:ping` holds in the same store as proof that the cache works.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `reachable` | boolean | Whether the write, read and removal succeeded and the read returned what was written |
+| `latency_ms` | float or null | Time the three operations took together, in milliseconds. `null` when unreachable |
+| `error` | string or null | Why the cache was unreachable |
+
+### `signals.disk`
+
+The disk that holds the app's base path.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `free_bytes` | integer or null | Free space in bytes. `null` when it could not be read |
+| `total_bytes` | integer or null | Size of the disk in bytes. `null` when it could not be read |
+| `error` | string or null | Why the disk space could not be read |
+
+### `signals.failed_jobs`
+
+Jobs that landed in the failed jobs table (`queue.failed.table`, usually `failed_jobs`) since the previous tick of this server. The Agent remembers the highest id it saw in the app's cache, per server. The first tick after install only records that id and reports `0`, so an old backlog is not reported as new. When the table was emptied since the previous tick, every row in it counts as new.
+
+Every server counts on its own, so an app on two servers reports each failed job twice, once per `server`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `new` | integer or null | Number of jobs that failed since the previous tick. `null` when it could not be counted |
+| `error` | string or null | Why it could not be counted, for example a missing table, failed jobs stored outside the database (`file`, `dynamodb`, `null` driver) or an unreachable database or cache |
 
 ## Responses
 

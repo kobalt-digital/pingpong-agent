@@ -65,7 +65,14 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 **Handshake.** On the first boot with a key set, the Agent posts its version, the PHP version and the Laravel version to PingPong. It sends from `app()->terminating()`, after the response has gone out, so no visitor waits on it. A deploy boots the app anyway (`package:discover`, `migrate`), so the handshake usually lands during the deploy. It is sent once per Agent version; upgrading the package sends a new one. A failed handshake is tried again ten minutes later.
 
-**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick proves the scheduler is alive; later releases add health signals to it.
+**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
+
+- **Database.** Whether the default connection answers a `select 1`, and how long it took.
+- **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
+- **Disk.** Free and total bytes of the disk that holds the app.
+- **Failed jobs.** How many jobs landed in the `failed_jobs` table since the previous tick.
+
+These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app.
 
 Every request carries the Agent key as a bearer token, the payload `schema` and the hostname of the sending server. Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried.
 

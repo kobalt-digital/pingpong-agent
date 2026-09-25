@@ -1,5 +1,9 @@
 <?php
 
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use KobaltDigital\PingPong\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
@@ -24,4 +28,30 @@ function payloadShape(mixed $value): mixed
     ksort($shape);
 
     return $shape;
+}
+
+function createFailedJobsTable(): void
+{
+    Schema::create('failed_jobs', function (Blueprint $table) {
+        $table->id();
+        $table->string('uuid')->unique();
+        $table->text('connection');
+        $table->text('queue');
+        $table->longText('payload');
+        $table->longText('exception');
+        $table->timestamp('failed_at')->useCurrent();
+    });
+}
+
+function failJobs(int $count): void
+{
+    foreach (range(1, $count) as $ignored) {
+        DB::table('failed_jobs')->insert([
+            'uuid' => Str::uuid()->toString(),
+            'connection' => 'redis',
+            'queue' => 'default',
+            'payload' => '{}',
+            'exception' => 'RuntimeException: Failed',
+        ]);
+    }
 }

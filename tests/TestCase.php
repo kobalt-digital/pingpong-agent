@@ -32,5 +32,6 @@ class TestCase extends Orchestra
         $app['env'] = 'local';
 
         $app['config']->set('cache.default', 'array');
+        $app['config']->set('queue.failed.database', 'testing');
     }
 }
