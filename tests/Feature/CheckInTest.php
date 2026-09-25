@@ -1,15 +1,18 @@
 <?php
 
 use Illuminate\Console\Application;
+use Illuminate\Console\Events\ScheduledBackgroundTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Console\Events\ScheduledTaskStarting;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use KobaltDigital\PingPong\Scheduling\ReportScheduledTasks;
 
 const CHECK_IN_URL = 'https://pingpong.kobaltdigital.nl/api/agent/check-in';
 
@@ -285,4 +288,60 @@ it('keeps the schedule chainable after the overrides', function () {
         'cron' => '0 4 * * *',
         'overrides' => ['max_runtime' => null, 'grace' => 5],
     ]);
+});
+
+it('checks in a background task when it finishes, not when it is sent to the background', function () {
+    $task = app(Schedule::class)->command('backup:run')->daily()->runInBackground();
+
+    event(new ScheduledTaskStarting($task));
+    event(new ScheduledTaskFinished($task, 0.0));
+
+    expect(sentCheckIns())->toHaveCount(1);
+
+    app()->forgetInstance(ReportScheduledTasks::class);
+
+    $task->exitCode = 0;
+
+    event(new ScheduledBackgroundTaskFinished($task));
+
+    [$start, $success] = sentCheckIns();
+
+    expect($success['signal'])->toBe('success')
+        ->and($success['run_id'])->toBe($start['run_id']);
+});
+
+it('checks in a background task that exits non zero as failed', function () {
+    $task = app(Schedule::class)->command('backup:run')->daily()->runInBackground();
+
+    event(new ScheduledTaskStarting($task));
+
+    $task->exitCode = 3;
+
+    event(new ScheduledBackgroundTaskFinished($task));
+
+    expect(sentCheckIns()[1])->toMatchArray([
+        'signal' => 'fail',
+        'exit_code' => 3,
+        'message' => null,
+    ]);
+});
+
+it('checks in a background task whose start it never saw under a run id of its own', function () {
+    $task = app(Schedule::class)->command('backup:run')->daily()->runInBackground();
+
+    $task->exitCode = 0;
+
+    event(new ScheduledBackgroundTaskFinished($task));
+
+    expect(sentCheckIns()[0]['signal'])->toBe('success')
+        ->and(sentCheckIns()[0]['run_id'])->toBeString()->not->toBeEmpty();
+});
+
+it('does not break the scheduler when the cache is down', function () {
+    $this->mock(Repository::class)->shouldReceive('put', 'pull')->andThrow(new RuntimeException('Connection refused'));
+
+    $task = app(Schedule::class)->command('backup:run')->daily()->runInBackground();
+
+    expect(fn () => event(new ScheduledTaskStarting($task)))->not->toThrow(Exception::class)
+        ->and(fn () => event(new ScheduledBackgroundTaskFinished($task)))->not->toThrow(Exception::class);
 });

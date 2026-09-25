@@ -215,11 +215,16 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 | Scheduler event | Signal |
 |---|---|
 | `ScheduledTaskStarting` | `start`, with a new `run_id` |
+| `ScheduledTaskFinished` of a task with `->runInBackground()` | nothing; the task has only been started |
+| `ScheduledBackgroundTaskFinished`, exit code `0` | `success`, from the `schedule:finish` process |
+| `ScheduledBackgroundTaskFinished`, exit code not `0` | `fail`, with the exit code and no message |
 | `ScheduledTaskFinished`, exit code `0` | `success` |
 | `ScheduledTaskFinished`, exit code not `0` | nothing; `ScheduledTaskFailed` follows and sends the `fail` |
 | `ScheduledTaskFinished` without an exit code | `skipped`: the task started but found another run still going |
 | `ScheduledTaskFailed` | `fail` |
 | `ScheduledTaskSkipped` | `skipped`, with a `run_id` of its own. Sent when a filter (`->when()`, `->skip()`, `withoutOverlapping`) kept a due task from running, or the schedule is paused (`schedule:pause`) |
+
+A background task ends in another process than it started in, so its `run_id` is kept in the app's cache for a day, per server, between the two.
 
 ### Overrides
 
