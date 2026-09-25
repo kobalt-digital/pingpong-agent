@@ -41,8 +41,19 @@ class Transport
      */
     public function send(string $path, array $payload): bool
     {
+        return $this->deliver($path, $payload) !== null;
+    }
+
+    /**
+     * Like send, but hands back PingPong's answer when it was delivered, for
+     * the callers that read it. Null when it was not.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function deliver(string $path, array $payload): ?Response
+    {
         if (! $this->shouldSend()) {
-            return false;
+            return null;
         }
 
         try {
@@ -60,10 +71,10 @@ class Transport
                 'exception' => $exception->getMessage(),
             ]);
 
-            return false;
+            return null;
         }
 
-        return $this->wasDelivered($path, $response);
+        return $this->wasDelivered($path, $response) ? $response : null;
     }
 
     private function wasDelivered(string $path, Response $response): bool

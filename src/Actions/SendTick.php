@@ -2,6 +2,7 @@
 
 namespace KobaltDigital\PingPong\Actions;
 
+use Illuminate\Http\Client\Response;
 use KobaltDigital\PingPong\DeliveredHashes;
 use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
@@ -11,6 +12,7 @@ use KobaltDigital\PingPong\Signals\DiskSignal;
 use KobaltDigital\PingPong\Signals\FailedJobsSignal;
 use KobaltDigital\PingPong\Signals\QueueSignal;
 use KobaltDigital\PingPong\Transport;
+use Throwable;
 
 class SendTick
 {
@@ -58,9 +60,9 @@ class SendTick
             $payload['inventory'] = $this->inventory->collect();
         }
 
-        $delivered = $this->transport->send('api/agent/tick', $payload);
+        $response = $this->transport->deliver('api/agent/tick', $payload);
 
-        if (! $delivered) {
+        if ($response === null) {
             return false;
         }
 
@@ -72,6 +74,30 @@ class SendTick
             $this->deliveredHashes->remember('inventory', $inventoryHash);
         }
 
+        if ($this->asksFor($response, 'send_tasks')) {
+            $this->deliveredHashes->forget('schedule');
+        }
+
+        if ($this->asksFor($response, 'send_inventory')) {
+            $this->deliveredHashes->forget('inventory');
+        }
+
         return true;
+    }
+
+    /**
+     * PingPong asks for a list again when it lacks the one this server marked
+     * delivered, for instance because it ticked before PingPong read it. Only
+     * a literal true asks; any other answer, JSON or not, is ignored.
+     */
+    private function asksFor(Response $response, string $flag): bool
+    {
+        try {
+            $body = $response->json();
+        } catch (Throwable) {
+            return false;
+        }
+
+        return is_array($body) && ($body[$flag] ?? null) === true;
     }
 }

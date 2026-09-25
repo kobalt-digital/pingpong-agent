@@ -115,3 +115,44 @@ it('sends an empty task list for an app without tasks of its own', function () {
 
     Http::assertSent(fn (Request $request) => $request['tasks'] === []);
 });
+
+it('sends the task list again on the next tick when PingPong asks for it', function () {
+    app(Schedule::class)->command('backup:run')->daily();
+
+    Http::fake([MANIFEST_TICK_URL => Http::sequence()
+        ->push(['status' => 'recorded'])
+        ->push(['status' => 'recorded', 'send_tasks' => true])
+        ->push(['status' => 'recorded'])
+        ->push(['status' => 'recorded']),
+    ]);
+
+    $this->artisan('pingpong:ping');
+    $this->artisan('pingpong:ping');
+    $this->artisan('pingpong:ping');
+    $this->artisan('pingpong:ping');
+
+    [, $asked, $resent, $after] = sentTicks();
+
+    expect($asked)->not->toHaveKey('tasks')
+        ->and(collect($resent['tasks'])->pluck('slug')->all())->toBe(['backup-run'])
+        ->and($after)->not->toHaveKey('tasks');
+});
+
+it('keeps the task list cached when PingPong does not ask for it', function (mixed $body) {
+    app(Schedule::class)->command('backup:run')->daily();
+
+    Http::fake([MANIFEST_TICK_URL => Http::response($body)]);
+
+    $this->artisan('pingpong:ping')->assertSuccessful();
+    $this->artisan('pingpong:ping')->assertSuccessful();
+
+    expect(sentTicks()[1])->not->toHaveKey('tasks');
+})->with([
+    'no flag' => [['status' => 'recorded']],
+    'flag false' => [['status' => 'recorded', 'send_tasks' => false]],
+    'flag not a boolean' => [['status' => 'recorded', 'send_tasks' => 'true']],
+    'unknown keys' => [['status' => 'recorded', 'send_everything' => true]],
+    'not json' => ['<html>ok</html>'],
+    'json but not an object' => ['"recorded"'],
+    'empty body' => [''],
+]);
