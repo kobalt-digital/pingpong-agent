@@ -75,3 +75,40 @@ function useDatabaseQueue(): void
         $table->unsignedInteger('created_at');
     });
 }
+
+/**
+ * Points the app's base path at a directory holding a composer.lock with
+ * the given packages.
+ *
+ * @param  array<string, string>  $packages
+ * @param  array<string, string>  $devPackages
+ */
+function useComposerLock(array $packages, array $devPackages = []): string
+{
+    $basePath = sys_get_temp_dir().'/pingpong-agent-'.Str::random(8);
+
+    mkdir($basePath);
+
+    writeComposerLock($basePath, $packages, $devPackages);
+
+    app()->setBasePath($basePath);
+
+    return $basePath;
+}
+
+/**
+ * @param  array<string, string>  $packages
+ * @param  array<string, string>  $devPackages
+ */
+function writeComposerLock(string $basePath, array $packages, array $devPackages = []): void
+{
+    $toLockEntries = fn (array $versions) => collect($versions)
+        ->map(fn (string $version, string $name) => ['name' => $name, 'version' => $version])
+        ->values()
+        ->all();
+
+    file_put_contents("{$basePath}/composer.lock", json_encode([
+        'packages' => $toLockEntries($packages),
+        'packages-dev' => $toLockEntries($devPackages),
+    ]));
+}

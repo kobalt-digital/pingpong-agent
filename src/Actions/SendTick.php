@@ -2,6 +2,8 @@
 
 namespace KobaltDigital\PingPong\Actions;
 
+use KobaltDigital\PingPong\DeliveredHashes;
+use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
 use KobaltDigital\PingPong\Signals\CacheSignal;
 use KobaltDigital\PingPong\Signals\DatabaseSignal;
@@ -20,6 +22,8 @@ class SendTick
         private FailedJobsSignal $failedJobs,
         private QueueSignal $queue,
         private ScheduleManifest $schedule,
+        private Inventory $inventory,
+        private DeliveredHashes $deliveredHashes,
     ) {}
 
     public function execute(): bool
@@ -28,10 +32,15 @@ class SendTick
 
         $scheduleHash = $this->schedule->hash($tasks);
 
-        $scheduleIsNew = $this->schedule->isNew($scheduleHash);
+        $scheduleIsNew = $this->deliveredHashes->isNew('schedule', $scheduleHash);
+
+        $inventoryHash = $this->inventory->hash();
+
+        $inventoryIsNew = $this->deliveredHashes->isNew('inventory', $inventoryHash);
 
         $payload = [
             'schedule_hash' => $scheduleHash,
+            'inventory_hash' => $inventoryHash,
             'signals' => [
                 'database' => $this->database->collect(),
                 'cache' => $this->cache->collect(),
@@ -45,12 +54,24 @@ class SendTick
             $payload['tasks'] = $tasks;
         }
 
-        $delivered = $this->transport->send('api/agent/tick', $payload);
-
-        if ($delivered && $scheduleIsNew) {
-            $this->schedule->delivered($scheduleHash);
+        if ($inventoryIsNew) {
+            $payload['inventory'] = $this->inventory->collect();
         }
 
-        return $delivered;
+        $delivered = $this->transport->send('api/agent/tick', $payload);
+
+        if (! $delivered) {
+            return false;
+        }
+
+        if ($scheduleIsNew) {
+            $this->deliveredHashes->remember('schedule', $scheduleHash);
+        }
+
+        if ($inventoryIsNew) {
+            $this->deliveredHashes->remember('inventory', $inventoryHash);
+        }
+
+        return true;
     }
 }
