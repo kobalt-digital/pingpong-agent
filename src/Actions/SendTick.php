@@ -2,6 +2,7 @@
 
 namespace KobaltDigital\PingPong\Actions;
 
+use KobaltDigital\PingPong\DeliveredHashes;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
 use KobaltDigital\PingPong\Signals\CacheSignal;
 use KobaltDigital\PingPong\Signals\DatabaseSignal;
@@ -20,6 +21,7 @@ class SendTick
         private FailedJobsSignal $failedJobs,
         private QueueSignal $queue,
         private ScheduleManifest $schedule,
+        private DeliveredHashes $deliveredHashes,
     ) {}
 
     public function execute(): bool
@@ -28,7 +30,7 @@ class SendTick
 
         $scheduleHash = $this->schedule->hash($tasks);
 
-        $scheduleIsNew = $this->schedule->isNew($scheduleHash);
+        $scheduleIsNew = $this->deliveredHashes->isNew('schedule', $scheduleHash);
 
         $payload = [
             'schedule_hash' => $scheduleHash,
@@ -48,7 +50,7 @@ class SendTick
         $delivered = $this->transport->send('api/agent/tick', $payload);
 
         if ($delivered && $scheduleIsNew) {
-            $this->schedule->delivered($scheduleHash);
+            $this->deliveredHashes->remember('schedule', $scheduleHash);
         }
 
         return $delivered;
