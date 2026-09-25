@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "server": "web-01",
+    "slug": "backup-run-only-db",
+    "signal": "fail",
+    "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
+    "cron": "0 3 * * *",
+    "timezone": "Europe/Amsterdam",
+    "exit_code": 2,
+    "message": "Scheduled command [backup:run --only-db] failed with exit code [2]."
+}

@@ -155,6 +155,75 @@ No canary is dispatched when the driver runs jobs without a worker: `sync`, `def
 
 `server` is the worker's hostname, which can differ from `dispatched_from`. Both times come from the clocks of their own servers.
 
+## Check-in
+
+`POST /api/agent/check-in`, from the scheduler process (`schedule:run`) as a task starts and ends. Check-ins never go through the queue.
+
+```json
+{
+    "schema": 1,
+    "server": "web-01",
+    "slug": "backup-run-only-db",
+    "signal": "start",
+    "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
+    "cron": "0 3 * * *",
+    "timezone": "Europe/Amsterdam",
+    "exit_code": null,
+    "message": null
+}
+```
+
+A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
+
+```json
+{
+    "schema": 1,
+    "server": "web-01",
+    "slug": "backup-run-only-db",
+    "signal": "fail",
+    "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
+    "cron": "0 3 * * *",
+    "timezone": "Europe/Amsterdam",
+    "exit_code": 2,
+    "message": "Scheduled command [backup:run --only-db] failed with exit code [2]."
+}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `slug` | string | Identifies the task, stable across deploys. At most 100 characters |
+| `signal` | string | `start`, `success`, `fail` or `skipped` |
+| `run_id` | string | UUID shared by the `start` of a run and the `success`, `fail` or `skipped` that ends it |
+| `cron` | string | The task's cron expression |
+| `timezone` | string | The task's timezone (`->timezone()`), else the app's `app.timezone` |
+| `exit_code` | integer or null | Exit code of a `fail`. `1` for a closure that threw. `null` for every other signal |
+| `message` | string or null | Exception message of a `fail`, at most 255 characters |
+
+### Signals
+
+| Scheduler event | Signal |
+|---|---|
+| `ScheduledTaskStarting` | `start`, with a new `run_id` |
+| `ScheduledTaskFinished`, exit code `0` | `success` |
+| `ScheduledTaskFinished`, exit code not `0` | nothing; `ScheduledTaskFailed` follows and sends the `fail` |
+| `ScheduledTaskFinished` without an exit code | `skipped`: the task started but found another run still going |
+| `ScheduledTaskFailed` | `fail` |
+| `ScheduledTaskSkipped` | `skipped`, with a `run_id` of its own. Sent when a filter (`->when()`, `->skip()`, `withoutOverlapping`) kept a due task from running, or the schedule is paused (`schedule:pause`) |
+
+### Slugs
+
+- A command: the command with its arguments, without the PHP and artisan binaries, so a new PHP path on the server keeps the slug. `backup:run --only-db` becomes `backup-run-only-db`, `exec('/usr/bin/certbot renew')` becomes `usr-bin-certbot-renew`.
+- A closure or job: its name (`->name()`, or the job class for `$schedule->job()`).
+- Longer than 100 characters: cut to 91 and ended with a dash and 8 characters of a hash of the full name.
+
+Two tasks with the same command and arguments share a slug, and so a task in PingPong.
+
+### Not reported
+
+- Tasks that repeat within a minute (`everyThirtySeconds()` and friends).
+- Closures without a name. There is nothing stable to derive a slug from, so the Agent logs an `info` line at the start of each run instead.
+- `pingpong:ping` itself. PingPong treats the tick as a built in task.
+
 ## Responses
 
 Any `2xx` counts as delivered. A `429` skips this request without a retry. Anything else, including a timeout after 5 seconds, is logged as a warning and dropped.
