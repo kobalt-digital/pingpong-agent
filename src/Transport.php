@@ -52,7 +52,7 @@ class Transport
                 ->timeout(self::TIMEOUT_SECONDS)
                 ->post($path, [
                     'schema' => self::SCHEMA,
-                    'server' => gethostname() ?: 'unknown',
+                    'server' => Server::name(),
                     ...$payload,
                 ]);
         } catch (Throwable $exception) {
