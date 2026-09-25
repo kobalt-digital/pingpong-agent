@@ -77,7 +77,7 @@ These are raw numbers. PingPong decides what counts as a problem. A check that f
 
 Every request carries the Agent key as a bearer token, the payload `schema` and the hostname of the sending server. Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried.
 
-**Check-ins.** Every scheduled task the app defines checks in with PingPong when it starts and when it succeeds, fails or is skipped, straight from the scheduler process. PingPong learns the task's cron expression and timezone from the Check-in, so there is nothing to set up per task. A tick carries a hash of the schedule, and the full task list whenever that hash changes, so a task removed from the code can be archived in PingPong.
+**Check-ins.** Every scheduled task the app defines checks in with PingPong when it starts and when it succeeds, fails or is skipped, straight from the scheduler process. PingPong learns the task's cron expression and timezone from the Check-in, so there is nothing to set up per task. A tick carries a hash of the schedule, and the full task list whenever that hash changes or PingPong asks for it again, so a task removed from the code can be archived in PingPong.
 
 A task can set its own limits where it is scheduled, in minutes:
 

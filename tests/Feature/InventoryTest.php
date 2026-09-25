@@ -126,3 +126,22 @@ it('sends the inventory again when the tick that carried it was not delivered', 
 
     expect(sentInventoryTicks()[1])->toHaveKey('inventory');
 });
+
+it('sends the inventory again on the next tick when PingPong asks for it', function () {
+    useComposerLock(['laravel/framework' => 'v13.2.0']);
+
+    Http::fake([INVENTORY_TICK_URL => Http::sequence()
+        ->push(['status' => 'recorded', 'send_inventory' => true])
+        ->push(['status' => 'recorded'])
+        ->push(['status' => 'recorded']),
+    ]);
+
+    $this->artisan('pingpong:ping');
+    $this->artisan('pingpong:ping');
+    $this->artisan('pingpong:ping');
+
+    [, $resent, $after] = sentInventoryTicks();
+
+    expect($resent)->toHaveKey('inventory')
+        ->and($after)->not->toHaveKey('inventory');
+});

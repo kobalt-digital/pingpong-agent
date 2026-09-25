@@ -34,6 +34,18 @@ class DeliveredHashes
         }
     }
 
+    /**
+     * Makes the next tick send the list again, whatever its hash.
+     */
+    public function forget(string $subject): void
+    {
+        try {
+            $this->cache->forget($this->key($subject));
+        } catch (Throwable) {
+            return;
+        }
+    }
+
     private function key(string $subject): string
     {
         return "pingpong-agent:{$subject}-hash:".Server::name();

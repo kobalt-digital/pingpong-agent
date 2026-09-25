@@ -112,7 +112,7 @@ Every signal is a raw fact measured on the sending server. The Agent never decid
 
 The tasks that send [Check-ins](#check-in), so without sub minute tasks, unnamed closures and `pingpong:ping`. One entry per slug, sorted by slug. An app without tasks of its own sends an empty list. A task that is missing from a list was removed from the code, and PingPong can archive it.
 
-The Agent keeps the hash of the last delivered list in the app's cache, per server. A tick that is not delivered leaves the hash alone, so the next tick sends the list again. When the cache cannot be read the list is sent anyway.
+The Agent keeps the hash of the last delivered list in the app's cache, per server. A tick that is not delivered leaves the hash alone, so the next tick sends the list again, and so does a tick PingPong answers with `send_tasks` (see [Responses](#responses)). When the cache cannot be read the list is sent anyway.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -315,3 +315,11 @@ Two tasks with the same command and arguments share a slug, and so a task in Pin
 ## Responses
 
 Any `2xx` counts as delivered. A `429` skips this request without a retry. Anything else, including a timeout after 5 seconds, is logged as a warning and dropped.
+
+The Agent reads one thing from a delivered tick's body. When PingPong lacks a list this server marked delivered (for instance because the app ticked before PingPong read it), it answers:
+
+```json
+{"status": "recorded", "send_tasks": true}
+```
+
+The Agent then forgets the cached `schedule_hash`, so the next tick carries `tasks` again. `send_inventory: true` does the same for `inventory`. Only a literal `true` asks. PingPong leaves the flags out otherwise, and every other key, a body that is not a JSON object and a body that is not JSON at all are ignored.
