@@ -71,6 +71,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
 - **Disk.** Free and total bytes of the disk that holds the app.
 - **Failed jobs.** How many jobs landed in the `failed_jobs` table since the previous tick.
+- **Queue.** Unless the default queue runs jobs without a worker (`sync`, `deferred`, `background`, `null`), every tick dispatches a small canary job to it. The worker that runs the canary reports it back to PingPong, so PingPong knows the workers are alive and how long a job waited. This is the only report that goes through the queue.
 
 These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app.
 

@@ -53,6 +53,7 @@ it('sends a tick shaped like the schema 1 fixture', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
     createFailedJobsTable();
+    useDatabaseQueue();
 
     Http::fake([TICK_URL => Http::response()]);
 

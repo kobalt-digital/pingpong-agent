@@ -5,6 +5,7 @@ namespace KobaltDigital\PingPong\Signals;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
+use KobaltDigital\PingPong\Server;
 use Throwable;
 
 class FailedJobsSignal
@@ -62,9 +63,7 @@ class FailedJobsSignal
             return $this->unknown("The {$table} table does not exist.");
         }
 
-        $server = gethostname() ?: 'unknown';
-
-        $markKey = "pingpong-agent:failed-jobs-mark:{$server}";
+        $markKey = 'pingpong-agent:failed-jobs-mark:'.Server::name();
 
         $mark = $this->cache->get($markKey);
 
