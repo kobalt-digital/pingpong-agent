@@ -9,6 +9,8 @@ class PingPongServiceProvider extends PackageServiceProvider
 {
     public function configurePackage(Package $package): void
     {
-        $package->name('pingpong-agent');
+        $package
+            ->name('pingpong-agent')
+            ->hasConfigFile();
     }
 }
