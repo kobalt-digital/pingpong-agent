@@ -6,6 +6,11 @@
             "reachable": true,
             "latency_ms": 1.84,
             "error": null
+        },
+        "cache": {
+            "reachable": true,
+            "latency_ms": 0.42,
+            "error": null
         }
     }
 }

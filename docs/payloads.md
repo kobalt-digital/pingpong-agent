@@ -46,6 +46,11 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "reachable": true,
             "latency_ms": 1.84,
             "error": null
+        },
+        "cache": {
+            "reachable": true,
+            "latency_ms": 0.42,
+            "error": null
         }
     }
 }
@@ -66,6 +71,16 @@ Runs `select 1` on the app's default database connection.
 | `reachable` | boolean | Whether the query succeeded |
 | `latency_ms` | float or null | Time the query took, connecting included, in milliseconds. `null` when unreachable |
 | `error` | string or null | Why the database was unreachable |
+
+### `signals.cache`
+
+Writes a random key to the app's default cache store, reads it back and removes it. The probe uses a key of its own, so it does not count the overlap lock `pingpong:ping` holds in the same store as proof that the cache works.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `reachable` | boolean | Whether the write, read and removal succeeded and the read returned what was written |
+| `latency_ms` | float or null | Time the three operations took together, in milliseconds. `null` when unreachable |
+| `error` | string or null | Why the cache was unreachable |
 
 ## Responses
 
