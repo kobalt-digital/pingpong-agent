@@ -2,17 +2,22 @@
 
 namespace KobaltDigital\PingPong\Actions;
 
+use KobaltDigital\PingPong\Signals\DatabaseSignal;
 use KobaltDigital\PingPong\Transport;
-use stdClass;
 
 class SendTick
 {
-    public function __construct(private Transport $transport) {}
+    public function __construct(
+        private Transport $transport,
+        private DatabaseSignal $database,
+    ) {}
 
     public function execute(): bool
     {
         return $this->transport->send('api/agent/tick', [
-            'signals' => new stdClass,
+            'signals' => [
+                'database' => $this->database->collect(),
+            ],
         ]);
     }
 }

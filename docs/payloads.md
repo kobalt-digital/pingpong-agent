@@ -41,13 +41,31 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 {
     "schema": 1,
     "server": "web-01",
-    "signals": {}
+    "signals": {
+        "database": {
+            "reachable": true,
+            "latency_ms": 1.84,
+            "error": null
+        }
+    }
 }
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
-| `signals` | object | Health signals keyed by name. Always a JSON object, empty until the Agent ships its first signals |
+| `signals` | object | Health signals keyed by name, always a JSON object |
+
+Every signal is a raw fact measured on the sending server. The Agent never decides whether a value is bad; PingPong owns the thresholds. A check that fails is reported in the signal itself, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
+
+### `signals.database`
+
+Runs `select 1` on the app's default database connection.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `reachable` | boolean | Whether the query succeeded |
+| `latency_ms` | float or null | Time the query took, connecting included, in milliseconds. `null` when unreachable |
+| `error` | string or null | Why the database was unreachable |
 
 ## Responses
 

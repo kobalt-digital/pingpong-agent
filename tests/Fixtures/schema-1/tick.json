@@ -1,5 +1,11 @@
 {
     "schema": 1,
     "server": "web-01",
-    "signals": {}
+    "signals": {
+        "database": {
+            "reachable": true,
+            "latency_ms": 1.84,
+            "error": null
+        }
+    }
 }
