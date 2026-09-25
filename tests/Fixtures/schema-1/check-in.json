@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "server": "web-01",
+    "slug": "backup-run-only-db",
+    "signal": "start",
+    "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
+    "cron": "0 3 * * *",
+    "timezone": "Europe/Amsterdam",
+    "overrides": {
+        "max_runtime": 240,
+        "grace": 10
+    },
+    "exit_code": null,
+    "message": null
+}

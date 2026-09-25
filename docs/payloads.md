@@ -41,6 +41,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 {
     "schema": 1,
     "server": "web-01",
+    "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "signals": {
         "database": {
             "reachable": true,
@@ -67,15 +68,45 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
             "error": null
         }
-    }
+    },
+    "tasks": [
+        {
+            "slug": "backup-run-only-db",
+            "command": "backup:run --only-db",
+            "description": "Nightly database backup",
+            "cron": "0 3 * * *",
+            "timezone": "Europe/Amsterdam",
+            "overrides": {
+                "max_runtime": 240,
+                "grace": 10
+            }
+        }
+    ]
 }
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
+| `schedule_hash` | string | SHA-256 of the task list below, whether or not the list is sent |
 | `signals` | object | Health signals keyed by name, always a JSON object |
+| `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
 
 Every signal is a raw fact measured on the sending server. The Agent never decides whether a value is bad; PingPong owns the thresholds. A check that fails is reported in the signal itself, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
+
+### `tasks`
+
+The tasks that send [Check-ins](#check-in), so without sub minute tasks, unnamed closures and `pingpong:ping`. One entry per slug, sorted by slug. An app without tasks of its own sends an empty list. A task that is missing from a list was removed from the code, and PingPong can archive it.
+
+The Agent keeps the hash of the last delivered list in the app's cache, per server. A tick that is not delivered leaves the hash alone, so the next tick sends the list again. When the cache cannot be read the list is sent anyway.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `slug` | string | Same as `slug` in the task's Check-ins |
+| `command` | string or null | The command without the PHP and artisan binaries. `null` for a closure or job |
+| `description` | string or null | `->description()` or `->name()`, the job class for `$schedule->job()` |
+| `cron` | string | The task's cron expression |
+| `timezone` | string | Same as in the task's Check-ins |
+| `overrides` | object | Same as in the task's Check-ins |
 
 ### `signals.database`
 
@@ -154,6 +185,103 @@ No canary is dispatched when the driver runs jobs without a worker: `sync`, `def
 | `ran_at` | string | When the worker ran the canary, same format, by the clock of `server` |
 
 `server` is the worker's hostname, which can differ from `dispatched_from`. Both times come from the clocks of their own servers.
+
+## Check-in
+
+`POST /api/agent/check-in`, from the scheduler process (`schedule:run`) as a task starts and ends. Check-ins never go through the queue.
+
+```json
+{
+    "schema": 1,
+    "server": "web-01",
+    "slug": "backup-run-only-db",
+    "signal": "start",
+    "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
+    "cron": "0 3 * * *",
+    "timezone": "Europe/Amsterdam",
+    "overrides": {
+        "max_runtime": 240,
+        "grace": 10
+    },
+    "exit_code": null,
+    "message": null
+}
+```
+
+A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
+
+```json
+{
+    "schema": 1,
+    "server": "web-01",
+    "slug": "backup-run-only-db",
+    "signal": "fail",
+    "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
+    "cron": "0 3 * * *",
+    "timezone": "Europe/Amsterdam",
+    "overrides": {
+        "max_runtime": 240,
+        "grace": 10
+    },
+    "exit_code": 2,
+    "message": "Scheduled command [backup:run --only-db] failed with exit code [2]."
+}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `slug` | string | Identifies the task, stable across deploys. At most 100 characters |
+| `signal` | string | `start`, `success`, `fail` or `skipped` |
+| `run_id` | string | UUID shared by the `start` of a run and the `success`, `fail` or `skipped` that ends it |
+| `cron` | string | The task's cron expression |
+| `timezone` | string | The task's timezone (`->timezone()`), else the app's `app.timezone` |
+| `overrides` | object | What the task sets in code with `->pingpong()`, see below. Always both keys |
+| `overrides.max_runtime` | integer or null | Minutes a run may take. `null` leaves it to PingPong |
+| `overrides.grace` | integer or null | Minutes a start may be late. `null` leaves it to PingPong |
+| `exit_code` | integer or null | Exit code of a `fail`. `1` for a closure that threw. `null` for every other signal |
+| `message` | string or null | Exception message of a `fail`, at most 255 characters |
+
+### Signals
+
+| Scheduler event | Signal |
+|---|---|
+| `ScheduledTaskStarting` | `start`, with a new `run_id` |
+| `ScheduledTaskFinished` of a task with `->runInBackground()` | nothing; the task has only been started |
+| `ScheduledBackgroundTaskFinished`, exit code `0` | `success`, from the `schedule:finish` process |
+| `ScheduledBackgroundTaskFinished`, exit code not `0` | `fail`, with the exit code and no message |
+| `ScheduledTaskFinished`, exit code `0` | `success` |
+| `ScheduledTaskFinished`, exit code not `0` | nothing; `ScheduledTaskFailed` follows and sends the `fail` |
+| `ScheduledTaskFinished` without an exit code | `skipped`: the task started but found another run still going |
+| `ScheduledTaskFailed` | `fail` |
+| `ScheduledTaskSkipped` | `skipped`, with a `run_id` of its own. Sent when a filter (`->when()`, `->skip()`, `withoutOverlapping`) kept a due task from running, or the schedule is paused (`schedule:pause`) |
+
+A background task ends in another process than it started in, so its `run_id` is kept in the app's cache for a day, per server, between the two.
+
+### Overrides
+
+A task sets them where it is scheduled:
+
+```php
+Schedule::command('backup:run --only-db')
+    ->dailyAt('03:00')
+    ->pingpong(maxRuntime: 240, grace: 10);
+```
+
+The Agent only passes them on. PingPong decides what they mean for the task.
+
+### Slugs
+
+- A command: the command with its arguments, without the PHP and artisan binaries, so a new PHP path on the server keeps the slug. `backup:run --only-db` becomes `backup-run-only-db`, `exec('/usr/bin/certbot renew')` becomes `usr-bin-certbot-renew`.
+- A closure or job: its name (`->name()`, or the job class for `$schedule->job()`).
+- Longer than 100 characters: cut to 91 and ended with a dash and 8 characters of a hash of the full name.
+
+Two tasks with the same command and arguments share a slug, and so a task in PingPong.
+
+### Not reported
+
+- Tasks that repeat within a minute (`everyThirtySeconds()` and friends).
+- Closures without a name. There is nothing stable to derive a slug from, so the Agent logs an `info` line at the start of each run instead.
+- `pingpong:ping` itself. PingPong treats the tick as a built in task.
 
 ## Responses
 

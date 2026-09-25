@@ -1,6 +1,7 @@
 {
     "schema": 1,
     "server": "web-01",
+    "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "signals": {
         "database": {
             "reachable": true,
@@ -27,5 +28,18 @@
             "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
             "error": null
         }
-    }
+    },
+    "tasks": [
+        {
+            "slug": "backup-run-only-db",
+            "command": "backup:run --only-db",
+            "description": "Nightly database backup",
+            "cron": "0 3 * * *",
+            "timezone": "Europe/Amsterdam",
+            "overrides": {
+                "max_runtime": 240,
+                "grace": 10
+            }
+        }
+    ]
 }

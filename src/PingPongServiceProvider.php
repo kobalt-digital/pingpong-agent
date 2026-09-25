@@ -2,9 +2,12 @@
 
 namespace KobaltDigital\PingPong;
 
+use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use KobaltDigital\PingPong\Actions\SendHandshake;
 use KobaltDigital\PingPong\Commands\PingCommand;
+use KobaltDigital\PingPong\Scheduling\ReportScheduledTasks;
+use KobaltDigital\PingPong\Scheduling\TaskOverrides;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -24,8 +27,22 @@ class PingPongServiceProvider extends PackageServiceProvider
             ->hasCommand(PingCommand::class);
     }
 
+    public function packageRegistered(): void
+    {
+        $this->app->singleton(ReportScheduledTasks::class);
+        $this->app->singleton(TaskOverrides::class);
+    }
+
     public function packageBooted(): void
     {
+        $this->app['events']->subscribe(ReportScheduledTasks::class);
+
+        Event::macro('pingpong', function (?int $maxRuntime = null, ?int $grace = null) {
+            app(TaskOverrides::class)->set($this, $maxRuntime, $grace);
+
+            return $this;
+        });
+
         $this->app->terminating(fn () => $this->app->make(SendHandshake::class)->execute());
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
