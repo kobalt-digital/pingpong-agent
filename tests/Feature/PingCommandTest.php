@@ -55,6 +55,11 @@ it('sends a tick shaped like the schema 1 fixture', function () {
     createFailedJobsTable();
     useDatabaseQueue();
 
+    app(Schedule::class)->command('backup:run --only-db')
+        ->description('Nightly database backup')
+        ->dailyAt('03:00')
+        ->pingpong(maxRuntime: 240, grace: 10);
+
     Http::fake([TICK_URL => Http::response()]);
 
     $this->artisan('pingpong:ping')->assertSuccessful();

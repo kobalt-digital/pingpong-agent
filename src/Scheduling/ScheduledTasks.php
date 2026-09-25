@@ -29,7 +29,9 @@ class ScheduledTasks
             return null;
         }
 
-        $slug = $this->slug($event);
+        $command = $event instanceof CallbackEvent ? null : $this->withoutBinaries($event->command);
+
+        $slug = $this->slug($command ?? $event->description);
 
         if ($slug === null || $slug === self::PING_SLUG) {
             return null;
@@ -39,6 +41,8 @@ class ScheduledTasks
 
         return new ScheduledTask(
             slug: $slug,
+            command: $command,
+            description: $event->description,
             cron: $event->expression,
             timezone: $this->timezone($event),
             maxRuntime: $overrides['max_runtime'],
@@ -56,12 +60,8 @@ class ScheduledTasks
      * without the PHP and artisan binaries in front of it, or the name of a
      * closure or job.
      */
-    private function slug(Event $event): ?string
+    private function slug(?string $name): ?string
     {
-        $name = $event instanceof CallbackEvent
-            ? $event->description
-            : $this->withoutBinaries($event->command);
-
         if (blank($name)) {
             return null;
         }

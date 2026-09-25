@@ -15,10 +15,15 @@ function payloadFixture(string $name): stdClass
 
 /**
  * Reduces a decoded JSON payload to its keys and value types, so a sent
- * payload can be compared with a fixture whose values are examples.
+ * payload can be compared with a fixture whose values are examples. A list
+ * is reduced to the shape of its first item.
  */
 function payloadShape(mixed $value): mixed
 {
+    if (is_array($value)) {
+        return $value === [] ? 'array' : [payloadShape($value[0])];
+    }
+
     if (! $value instanceof stdClass) {
         return get_debug_type($value);
     }

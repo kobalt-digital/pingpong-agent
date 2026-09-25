@@ -41,6 +41,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 {
     "schema": 1,
     "server": "web-01",
+    "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "signals": {
         "database": {
             "reachable": true,
@@ -67,15 +68,45 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
             "error": null
         }
-    }
+    },
+    "tasks": [
+        {
+            "slug": "backup-run-only-db",
+            "command": "backup:run --only-db",
+            "description": "Nightly database backup",
+            "cron": "0 3 * * *",
+            "timezone": "Europe/Amsterdam",
+            "overrides": {
+                "max_runtime": 240,
+                "grace": 10
+            }
+        }
+    ]
 }
 ```
 
 | Key | Type | Meaning |
 |---|---|---|
+| `schedule_hash` | string | SHA-256 of the task list below, whether or not the list is sent |
 | `signals` | object | Health signals keyed by name, always a JSON object |
+| `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
 
 Every signal is a raw fact measured on the sending server. The Agent never decides whether a value is bad; PingPong owns the thresholds. A check that fails is reported in the signal itself, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
+
+### `tasks`
+
+The tasks that send [Check-ins](#check-in), so without sub minute tasks, unnamed closures and `pingpong:ping`. One entry per slug, sorted by slug. An app without tasks of its own sends an empty list. A task that is missing from a list was removed from the code, and PingPong can archive it.
+
+The Agent keeps the hash of the last delivered list in the app's cache, per server. A tick that is not delivered leaves the hash alone, so the next tick sends the list again. When the cache cannot be read the list is sent anyway.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `slug` | string | Same as `slug` in the task's Check-ins |
+| `command` | string or null | The command without the PHP and artisan binaries. `null` for a closure or job |
+| `description` | string or null | `->description()` or `->name()`, the job class for `$schedule->job()` |
+| `cron` | string | The task's cron expression |
+| `timezone` | string | Same as in the task's Check-ins |
+| `overrides` | object | Same as in the task's Check-ins |
 
 ### `signals.database`
 
