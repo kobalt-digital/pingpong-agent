@@ -4,6 +4,7 @@ namespace KobaltDigital\PingPong\Actions;
 
 use KobaltDigital\PingPong\Signals\CacheSignal;
 use KobaltDigital\PingPong\Signals\DatabaseSignal;
+use KobaltDigital\PingPong\Signals\DiskSignal;
 use KobaltDigital\PingPong\Transport;
 
 class SendTick
@@ -12,6 +13,7 @@ class SendTick
         private Transport $transport,
         private DatabaseSignal $database,
         private CacheSignal $cache,
+        private DiskSignal $disk,
     ) {}
 
     public function execute(): bool
@@ -20,6 +22,7 @@ class SendTick
             'signals' => [
                 'database' => $this->database->collect(),
                 'cache' => $this->cache->collect(),
+                'disk' => $this->disk->collect(),
             ],
         ]);
     }

@@ -11,6 +11,11 @@
             "reachable": true,
             "latency_ms": 0.42,
             "error": null
+        },
+        "disk": {
+            "free_bytes": 52613349376,
+            "total_bytes": 105226698752,
+            "error": null
         }
     }
 }

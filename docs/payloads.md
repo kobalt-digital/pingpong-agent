@@ -51,6 +51,11 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "reachable": true,
             "latency_ms": 0.42,
             "error": null
+        },
+        "disk": {
+            "free_bytes": 52613349376,
+            "total_bytes": 105226698752,
+            "error": null
         }
     }
 }
@@ -81,6 +86,16 @@ Writes a random key to the app's default cache store, reads it back and removes 
 | `reachable` | boolean | Whether the write, read and removal succeeded and the read returned what was written |
 | `latency_ms` | float or null | Time the three operations took together, in milliseconds. `null` when unreachable |
 | `error` | string or null | Why the cache was unreachable |
+
+### `signals.disk`
+
+The disk that holds the app's base path.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `free_bytes` | integer or null | Free space in bytes. `null` when it could not be read |
+| `total_bytes` | integer or null | Size of the disk in bytes. `null` when it could not be read |
+| `error` | string or null | Why the disk space could not be read |
 
 ## Responses
 
