@@ -2,6 +2,7 @@
 
 namespace KobaltDigital\PingPong;
 
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -13,9 +14,24 @@ class Transport
 
     public const TIMEOUT_SECONDS = 5;
 
-    public function isConfigured(): bool
+    public function __construct(private Application $app) {}
+
+    /**
+     * The one place that decides whether the Agent talks to PingPong at all:
+     * not without a key, not when disabled, and never from the host app's
+     * unit tests, which would otherwise report to the real Monitor.
+     */
+    public function shouldSend(): bool
     {
-        return filled(config('pingpong-agent.key'));
+        if (! config('pingpong-agent.enabled')) {
+            return false;
+        }
+
+        if (blank(config('pingpong-agent.key'))) {
+            return false;
+        }
+
+        return ! $this->app->runningUnitTests();
     }
 
     /**
@@ -25,7 +41,7 @@ class Transport
      */
     public function send(string $path, array $payload): bool
     {
-        if (! $this->isConfigured()) {
+        if (! $this->shouldSend()) {
             return false;
         }
 

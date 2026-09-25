@@ -33,6 +33,21 @@ it('schedules nothing without a key', function () {
     expect(scheduledPings())->toBeEmpty();
 });
 
+it('schedules nothing when disabled', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.enabled', false);
+
+    expect(scheduledPings())->toBeEmpty();
+});
+
+it('schedules nothing while the app runs its unit tests', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    app()['env'] = 'testing';
+
+    expect(scheduledPings())->toBeEmpty();
+});
+
 it('sends a tick shaped like the schema 1 fixture', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 

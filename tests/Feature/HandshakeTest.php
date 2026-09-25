@@ -23,6 +23,18 @@ it('sends no handshake without a key', function () {
     Http::assertNothingSent();
 });
 
+it('sends no handshake while the app runs its unit tests', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    app()['env'] = 'testing';
+
+    Http::fake([HANDSHAKE_URL => Http::response()]);
+
+    app()->terminate();
+
+    Http::assertNothingSent();
+});
+
 it('sends the handshake when the app terminates, not while it boots', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 

@@ -18,8 +18,8 @@ class PingCommand extends Command
      */
     public function handle(Transport $transport, SendTick $sendTick): int
     {
-        if (! $transport->isConfigured()) {
-            $this->components->warn('No PINGPONG_KEY set, nothing sent.');
+        if (! $transport->shouldSend()) {
+            $this->components->warn('PingPong Agent is off (no key, disabled or running tests), nothing sent.');
 
             return self::SUCCESS;
         }

@@ -22,8 +22,15 @@ class TestCase extends Orchestra
         ];
     }
 
+    /**
+     * The Agent stays silent while the host app runs its unit tests. These
+     * tests boot the app as "local" so they exercise sending; a test puts
+     * "testing" back to cover the silence.
+     */
     protected function defineEnvironment($app): void
     {
+        $app['env'] = 'local';
+
         $app['config']->set('cache.default', 'array');
     }
 }

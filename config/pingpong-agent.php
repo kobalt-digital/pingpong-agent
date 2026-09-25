@@ -3,6 +3,12 @@
 return [
 
     /*
+     * Switch the Agent off without removing the key. It is also silent
+     * while the app runs its unit tests, whatever this says.
+     */
+    'enabled' => env('PINGPONG_ENABLED', true),
+
+    /*
      * Where PingPong lives. Only change this to point an app at a local or
      * staging PingPong.
      */

@@ -26,7 +26,7 @@ class SendHandshake
      */
     public function execute(): void
     {
-        if (! $this->transport->isConfigured()) {
+        if (! $this->transport->shouldSend()) {
             return;
         }
 

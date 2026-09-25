@@ -47,12 +47,19 @@ This is the contents of the published config file:
 
 ```php
 return [
+    'enabled' => env('PINGPONG_ENABLED', true),
     'endpoint' => env('PINGPONG_ENDPOINT', 'https://pingpong.kobaltdigital.nl'),
     'key' => env('PINGPONG_KEY'),
 ];
 ```
 
 Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong.
+
+## Switching it off
+
+Set `PINGPONG_ENABLED=false` to silence the Agent without removing the key, for example on a local machine that has a copy of the production `.env`. The Agent then sends no handshake and adds nothing to the schedule.
+
+The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), even with a key set, so a test suite never reports to the real Monitor.
 
 ## What it sends
 

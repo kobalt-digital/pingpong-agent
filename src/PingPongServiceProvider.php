@@ -29,7 +29,7 @@ class PingPongServiceProvider extends PackageServiceProvider
         $this->app->terminating(fn () => $this->app->make(SendHandshake::class)->execute());
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-            if (! $this->app->make(Transport::class)->isConfigured()) {
+            if (! $this->app->make(Transport::class)->shouldSend()) {
                 return;
             }
 

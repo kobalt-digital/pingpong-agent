@@ -46,6 +46,33 @@ it('sends nothing without a key', function () {
     Http::assertNothingSent();
 });
 
+it('sends nothing when disabled', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.enabled', false);
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/*' => Http::response()]);
+
+    $delivered = app(Transport::class)->send('api/agent/tick', []);
+
+    expect($delivered)->toBeFalse();
+
+    Http::assertNothingSent();
+});
+
+it('sends nothing while the app runs its unit tests, even with a key', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    app()['env'] = 'testing';
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/*' => Http::response()]);
+
+    $delivered = app(Transport::class)->send('api/agent/tick', []);
+
+    expect($delivered)->toBeFalse();
+
+    Http::assertNothingSent();
+});
+
 it('gives up after 5 seconds', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
