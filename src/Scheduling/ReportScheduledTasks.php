@@ -115,6 +115,10 @@ class ReportScheduledTasks
             'run_id' => $this->runIds[$event] ?? Str::uuid()->toString(),
             'cron' => $task->cron,
             'timezone' => $task->timezone,
+            'overrides' => [
+                'max_runtime' => $task->maxRuntime,
+                'grace' => $task->grace,
+            ],
             'exit_code' => $signal === CheckInSignal::FAIL ? $event->exitCode : null,
             'message' => $message === null ? null : Str::limit($message, self::MESSAGE_MAX_LENGTH - 3),
         ]);

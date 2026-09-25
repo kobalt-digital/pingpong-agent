@@ -8,5 +8,7 @@ class ScheduledTask
         public readonly string $slug,
         public readonly string $cron,
         public readonly string $timezone,
+        public readonly ?int $maxRuntime,
+        public readonly ?int $grace,
     ) {}
 }

@@ -17,6 +17,8 @@ class ScheduledTasks
      */
     public const PING_SLUG = 'pingpong-ping';
 
+    public function __construct(private TaskOverrides $overrides) {}
+
     /**
      * Null for what PingPong does not follow: sub minute tasks, closures
      * without a name and the Agent's own ping.
@@ -33,10 +35,14 @@ class ScheduledTasks
             return null;
         }
 
+        $overrides = $this->overrides->for($event);
+
         return new ScheduledTask(
             slug: $slug,
             cron: $event->expression,
             timezone: $this->timezone($event),
+            maxRuntime: $overrides['max_runtime'],
+            grace: $overrides['grace'],
         );
     }
 

@@ -168,6 +168,10 @@ No canary is dispatched when the driver runs jobs without a worker: `sync`, `def
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
     "cron": "0 3 * * *",
     "timezone": "Europe/Amsterdam",
+    "overrides": {
+        "max_runtime": 240,
+        "grace": 10
+    },
     "exit_code": null,
     "message": null
 }
@@ -184,6 +188,10 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
     "cron": "0 3 * * *",
     "timezone": "Europe/Amsterdam",
+    "overrides": {
+        "max_runtime": 240,
+        "grace": 10
+    },
     "exit_code": 2,
     "message": "Scheduled command [backup:run --only-db] failed with exit code [2]."
 }
@@ -196,6 +204,9 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 | `run_id` | string | UUID shared by the `start` of a run and the `success`, `fail` or `skipped` that ends it |
 | `cron` | string | The task's cron expression |
 | `timezone` | string | The task's timezone (`->timezone()`), else the app's `app.timezone` |
+| `overrides` | object | What the task sets in code with `->pingpong()`, see below. Always both keys |
+| `overrides.max_runtime` | integer or null | Minutes a run may take. `null` leaves it to PingPong |
+| `overrides.grace` | integer or null | Minutes a start may be late. `null` leaves it to PingPong |
 | `exit_code` | integer or null | Exit code of a `fail`. `1` for a closure that threw. `null` for every other signal |
 | `message` | string or null | Exception message of a `fail`, at most 255 characters |
 
@@ -209,6 +220,18 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 | `ScheduledTaskFinished` without an exit code | `skipped`: the task started but found another run still going |
 | `ScheduledTaskFailed` | `fail` |
 | `ScheduledTaskSkipped` | `skipped`, with a `run_id` of its own. Sent when a filter (`->when()`, `->skip()`, `withoutOverlapping`) kept a due task from running, or the schedule is paused (`schedule:pause`) |
+
+### Overrides
+
+A task sets them where it is scheduled:
+
+```php
+Schedule::command('backup:run --only-db')
+    ->dailyAt('03:00')
+    ->pingpong(maxRuntime: 240, grace: 10);
+```
+
+The Agent only passes them on. PingPong decides what they mean for the task.
 
 ### Slugs
 

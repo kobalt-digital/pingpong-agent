@@ -32,7 +32,7 @@ function sentCheckIns(): array
 }
 
 it('checks in when a task starts, with its schedule and a run id', function () {
-    $task = app(Schedule::class)->command('backup:run --only-db')->dailyAt('03:00');
+    $task = app(Schedule::class)->command('backup:run --only-db')->dailyAt('03:00')->pingpong(maxRuntime: 240, grace: 10);
 
     event(new ScheduledTaskStarting($task));
 
@@ -76,7 +76,7 @@ it('gives every run its own run id', function () {
 });
 
 it('checks in a failed command once, with its exit code', function () {
-    $task = app(Schedule::class)->command('backup:run')->daily();
+    $task = app(Schedule::class)->command('backup:run')->daily()->pingpong(maxRuntime: 240, grace: 10);
 
     event(new ScheduledTaskStarting($task));
 
@@ -252,4 +252,37 @@ it('checks in a closure that throws as failed', function () {
     expect($checkIns->pluck('signal')->all())->toBe(['start', 'fail'])
         ->and($checkIns[1]['exit_code'])->toBe(1)
         ->and($checkIns[1]['message'])->toBe('Export disk is full');
+});
+
+it('sends the overrides a task sets in code', function () {
+    $task = app(Schedule::class)->command('backup:run')->daily()->pingpong(maxRuntime: 240, grace: 10);
+
+    event(new ScheduledTaskStarting($task));
+
+    expect(sentCheckIns()[0]['overrides'])->toBe([
+        'max_runtime' => 240,
+        'grace' => 10,
+    ]);
+});
+
+it('sends empty overrides for a task that sets none', function () {
+    $task = app(Schedule::class)->command('backup:run')->daily();
+
+    event(new ScheduledTaskStarting($task));
+
+    expect(sentCheckIns()[0]['overrides'])->toBe([
+        'max_runtime' => null,
+        'grace' => null,
+    ]);
+});
+
+it('keeps the schedule chainable after the overrides', function () {
+    $task = app(Schedule::class)->command('backup:run')->pingpong(grace: 5)->dailyAt('04:00');
+
+    event(new ScheduledTaskStarting($task));
+
+    expect(sentCheckIns()[0])->toMatchArray([
+        'cron' => '0 4 * * *',
+        'overrides' => ['max_runtime' => null, 'grace' => 5],
+    ]);
 });
