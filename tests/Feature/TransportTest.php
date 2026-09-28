@@ -3,6 +3,7 @@
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Transport;
 
 it('posts the payload with the bearer key, schema and server to the production endpoint by default', function () {
@@ -119,4 +120,64 @@ it('skips without retrying when rate limited', function () {
     expect($delivered)->toBeFalse();
 
     Http::assertSentCount(1);
+});
+
+it('follows a redirected endpoint with the POST, body and key intact, and says which endpoint to set', function (int $status) {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.endpoint', 'http://pingpong.test');
+
+    Log::spy();
+
+    Http::fake([
+        'http://pingpong.test/api/agent/tick' => Http::response(status: $status, headers: ['Location' => 'https://pingpong.test/api/agent/tick']),
+        'https://pingpong.test/api/agent/tick' => Http::response(),
+    ]);
+
+    $delivered = app(Transport::class)->send('api/agent/tick', ['agent_version' => '0.1.0']);
+
+    expect($delivered)->toBeTrue();
+
+    Http::assertSentCount(2);
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://pingpong.test/api/agent/tick'
+        && $request->method() === 'POST'
+        && $request->hasHeader('Authorization', 'Bearer pp_agent_test')
+        && $request->data() === [
+            'schema' => 1,
+            'server' => gethostname(),
+            'agent_version' => '0.1.0',
+        ]);
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message) => $message === 'PingPong endpoint redirected to https://pingpong.test; set PINGPONG_ENDPOINT to that URL (usually https).');
+})->with([301, 302, 307, 308]);
+
+it('does not hand the key to a redirect onto another host', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.endpoint', 'http://pingpong.test');
+
+    Http::fake([
+        'http://pingpong.test/api/agent/tick' => Http::response(status: 301, headers: ['Location' => 'https://elsewhere.test/api/agent/tick']),
+        'https://elsewhere.test/api/agent/tick' => Http::response(),
+    ]);
+
+    app(Transport::class)->send('api/agent/tick', []);
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'https://elsewhere.test/api/agent/tick'
+        && ! $request->hasHeader('Authorization'));
+});
+
+it('gives up without throwing after 3 redirects', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.endpoint', 'https://pingpong.test');
+
+    Log::spy();
+
+    Http::fake(['https://pingpong.test/*' => Http::response(status: 301, headers: ['Location' => 'https://pingpong.test/api/agent/tick'])]);
+
+    $delivered = app(Transport::class)->send('api/agent/tick', []);
+
+    expect($delivered)->toBeFalse();
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context) => str_contains($message, 'could not reach')
+        && str_contains($context['exception'], 'Will not follow more than 3 redirects'));
 });

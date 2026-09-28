@@ -65,7 +65,7 @@ return [
 ];
 ```
 
-Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. Removing a class from `signals` stops the tick from sending that signal.
+Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It must be the final `https` URL. The Agent still follows a redirect, but logs a warning naming the URL to set instead. Removing a class from `signals` stops the tick from sending that signal.
 
 ## Switching it off
 
