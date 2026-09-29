@@ -3,13 +3,19 @@
 namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Database\DatabaseManager;
+use KobaltDigital\PingPong\Contracts\Collector;
 use Throwable;
 
-class DatabaseSignal
+class Database implements Collector
 {
     use CollectsFacts;
 
     public function __construct(private DatabaseManager $database) {}
+
+    public function name(): string
+    {
+        return 'database';
+    }
 
     /**
      * @return array{

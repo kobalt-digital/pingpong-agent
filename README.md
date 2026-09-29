@@ -46,14 +46,23 @@ php artisan vendor:publish --tag="pingpong-agent-config"
 This is the contents of the published config file:
 
 ```php
+use KobaltDigital\PingPong\Signals;
+
 return [
     'enabled' => env('PINGPONG_ENABLED', true),
     'endpoint' => env('PINGPONG_ENDPOINT', 'https://pingpong.kobaltdigital.nl'),
     'key' => env('PINGPONG_KEY'),
+    'signals' => [
+        Signals\Database::class,
+        Signals\Cache::class,
+        Signals\Disk::class,
+        Signals\FailedJobs::class,
+        Signals\Queue::class,
+    ],
 ];
 ```
 
-Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong.
+Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. Removing a class from `signals` stops the tick from sending that signal.
 
 ## Switching it off
 

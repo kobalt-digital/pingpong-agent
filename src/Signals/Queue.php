@@ -5,11 +5,12 @@ namespace KobaltDigital\PingPong\Signals;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
+use KobaltDigital\PingPong\Contracts\Collector;
 use KobaltDigital\PingPong\Jobs\ReportQueueCanary;
 use KobaltDigital\PingPong\Server;
 use Throwable;
 
-class QueueSignal
+class Queue implements Collector
 {
     use CollectsFacts;
 
@@ -20,6 +21,11 @@ class QueueSignal
     public const DRIVERS_WITHOUT_WORKERS = ['sync', 'deferred', 'background', 'null'];
 
     public function __construct(private Dispatcher $bus) {}
+
+    public function name(): string
+    {
+        return 'queue';
+    }
 
     /**
      * @return array{

@@ -5,10 +5,11 @@ namespace KobaltDigital\PingPong\Signals;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
+use KobaltDigital\PingPong\Contracts\Collector;
 use KobaltDigital\PingPong\Server;
 use Throwable;
 
-class FailedJobsSignal
+class FailedJobs implements Collector
 {
     use CollectsFacts;
 
@@ -18,6 +19,11 @@ class FailedJobsSignal
         private DatabaseManager $database,
         private Repository $cache,
     ) {}
+
+    public function name(): string
+    {
+        return 'failed_jobs';
+    }
 
     /**
      * @return array{

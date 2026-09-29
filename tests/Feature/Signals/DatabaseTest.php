@@ -1,10 +1,10 @@
 <?php
 
 use Illuminate\Support\Facades\DB;
-use KobaltDigital\PingPong\Signals\DatabaseSignal;
+use KobaltDigital\PingPong\Signals\Database;
 
 it('reports the database as reachable with its latency', function () {
-    $signal = app(DatabaseSignal::class)->collect();
+    $signal = app(Database::class)->collect();
 
     expect($signal['reachable'])->toBeTrue()
         ->and($signal['latency_ms'])->toBeFloat()->toBeGreaterThanOrEqual(0)
@@ -16,7 +16,7 @@ it('reports an unreachable database as a fact', function () {
 
     DB::purge();
 
-    $signal = app(DatabaseSignal::class)->collect();
+    $signal = app(Database::class)->collect();
 
     expect($signal['reachable'])->toBeFalse()
         ->and($signal['latency_ms'])->toBeNull()
@@ -28,7 +28,7 @@ it('keeps the error short enough for PingPong to store', function () {
 
     DB::purge();
 
-    $signal = app(DatabaseSignal::class)->collect();
+    $signal = app(Database::class)->collect();
 
     expect($signal['reachable'])->toBeFalse()
         ->and(mb_strlen($signal['error']))->toBeLessThanOrEqual(255);
