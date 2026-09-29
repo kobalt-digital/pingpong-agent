@@ -58,6 +58,9 @@ return [
         Signals\Disk::class,
         Signals\FailedJobs::class,
         Signals\Queue::class,
+        Signals\Load::class,
+        Signals\Memory::class,
+        Signals\AppState::class,
     ],
 ];
 ```
@@ -74,7 +77,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 **Handshake.** On the first boot with a key set, the Agent posts its version, the PHP version and the Laravel version to PingPong. It sends from `app()->terminating()`, after the response has gone out, so no visitor waits on it. A deploy boots the app anyway (`package:discover`, `migrate`), so the handshake usually lands during the deploy. It is sent once per Agent version; upgrading the package sends a new one. A failed handshake is tried again ten minutes later.
 
-**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
+**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick keeps running while the app is down for maintenance (`php artisan down`), and says so in `app.maintenance`. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
 
 - **Database.** Whether the default connection answers a `select 1`, and how long it took.
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.

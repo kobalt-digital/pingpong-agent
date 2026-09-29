@@ -34,6 +34,9 @@ return [
         Signals\Disk::class,
         Signals\FailedJobs::class,
         Signals\Queue::class,
+        Signals\Load::class,
+        Signals\Memory::class,
+        Signals\AppState::class,
     ],
 
 ];

@@ -52,6 +52,7 @@ class PingPongServiceProvider extends PackageServiceProvider
 
             $schedule->command(PingCommand::class)
                 ->everyMinute()
+                ->evenInMaintenanceMode()
                 ->withoutOverlapping(self::LOCK_EXPIRES_AFTER_MINUTES);
         });
     }
