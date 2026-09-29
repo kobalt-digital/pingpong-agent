@@ -1,7 +1,9 @@
 <?php
 
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use KobaltDigital\PingPong\Signals\FailedJobs;
 
 it('reports no new failed jobs on the first tick, whatever is already in the table', function () {
@@ -38,6 +40,20 @@ it('counts every job in the table as new after the table was emptied and refille
     failJobs(2);
 
     expect(app(FailedJobs::class)->collect()['new'])->toBe(2);
+});
+
+it('reads failed jobs from their own connection when it is not the default', function () {
+    config()->set('database.connections.failed', ['driver' => 'sqlite', 'database' => ':memory:']);
+    config()->set('queue.failed.database', 'failed');
+
+    Schema::connection('failed')->create('failed_jobs', function (Blueprint $table) {
+        $table->id();
+    });
+
+    expect(app(FailedJobs::class)->collect())->toBe([
+        'new' => 0,
+        'error' => null,
+    ]);
 });
 
 it('reports a missing failed jobs table as a fact', function () {

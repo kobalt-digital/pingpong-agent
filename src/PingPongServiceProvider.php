@@ -31,6 +31,9 @@ class PingPongServiceProvider extends PackageServiceProvider
     {
         $this->app->singleton(ReportScheduledTasks::class);
         $this->app->singleton(TaskOverrides::class);
+
+        // One probe per process, so the database signals share one connect attempt.
+        $this->app->singleton(DatabaseProbe::class);
     }
 
     public function packageBooted(): void

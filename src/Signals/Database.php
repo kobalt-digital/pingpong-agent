@@ -2,15 +2,15 @@
 
 namespace KobaltDigital\PingPong\Signals;
 
-use Illuminate\Database\DatabaseManager;
 use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\DatabaseProbe;
 use Throwable;
 
 class Database implements Collector
 {
     use CollectsFacts;
 
-    public function __construct(private DatabaseManager $database) {}
+    public function __construct(private DatabaseProbe $probe) {}
 
     public function name(): string
     {
@@ -18,6 +18,8 @@ class Database implements Collector
     }
 
     /**
+     * Only the query is timed; the probe has already connected.
+     *
      * @return array{
      *     reachable: bool,
      *     latency_ms: ?float,
@@ -26,22 +28,42 @@ class Database implements Collector
      */
     public function collect(): array
     {
+        $connection = $this->probe->connection();
+
+        if ($connection === null) {
+            return $this->unreachable((string) $this->probe->error());
+        }
+
         $startedAt = hrtime(true);
 
         try {
-            $this->database->connection()->select('select 1');
+            // The write connection is the one the probe opened; a read
+            // replica would put a second connect inside the timer.
+            $connection->select('select 1', useReadPdo: false);
         } catch (Throwable $exception) {
-            return [
-                'reachable' => false,
-                'latency_ms' => null,
-                'error' => $this->error($exception->getMessage()),
-            ];
+            return $this->unreachable($exception->getMessage());
         }
 
         return [
             'reachable' => true,
             'latency_ms' => $this->millisecondsSince($startedAt),
             'error' => null,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     reachable: false,
+     *     latency_ms: null,
+     *     error: string
+     * }
+     */
+    private function unreachable(string $message): array
+    {
+        return [
+            'reachable' => false,
+            'latency_ms' => null,
+            'error' => $this->error($message),
         ];
     }
 }

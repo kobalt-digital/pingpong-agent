@@ -139,12 +139,12 @@ Read from the `composer.lock` in the app's base path, so it lists what the lock 
 
 ### `signals.database`
 
-Runs `select 1` on the app's default database connection.
+Connects to the app's default database connection with a 2 second connect timeout, then runs `select 1` on it. Laravel retries a connect that timed out once, so an unreachable database costs about 4 seconds at worst. SQLite has no network connect to bound. The Agent connects once per tick and the other database signals share that connection, so an unreachable database is waited on once. A `select 1` that hangs after connecting is not bounded.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `reachable` | boolean | Whether the query succeeded |
-| `latency_ms` | float or null | Time the query took, connecting included, in milliseconds. `null` when unreachable |
+| `reachable` | boolean | Whether the connect and the query succeeded |
+| `latency_ms` | float or null | Time the query took on the already open connection, in milliseconds. Connecting is not included. `null` when unreachable |
 | `error` | string or null | Why the database was unreachable |
 
 ### `signals.cache`
@@ -172,6 +172,8 @@ The disk that holds the app's base path.
 Jobs that landed in the failed jobs table (`queue.failed.table`, usually `failed_jobs`) since the previous tick of this server. The Agent remembers the highest id it saw in the app's cache, per server. The first tick after install only records that id and reports `0`, so an old backlog is not reported as new. When the table was emptied since the previous tick, every row in it counts as new.
 
 Every server counts on its own, so an app on two servers reports each failed job twice, once per `server`.
+
+The count reads through the connection `signals.database` opened when `queue.failed.database` is empty or names the default connection. When that connection could not be opened, `new` is `null` and `error` repeats why, without connecting again. Another connection is used as configured, without the short connect timeout.
 
 | Key | Type | Meaning |
 |---|---|---|
