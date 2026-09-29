@@ -24,10 +24,15 @@
             "error": null
         },
         "queue": {
-            "connection": "redis",
-            "driver": "redis",
+            "connection": "database",
+            "driver": "database",
             "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
-            "error": null
+            "error": null,
+            "pending": {
+                "default": 12,
+                "mail": 3
+            },
+            "oldest_pending_seconds": 40
         },
         "load": {
             "1m": 0.81,

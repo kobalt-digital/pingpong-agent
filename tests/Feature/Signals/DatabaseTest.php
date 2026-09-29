@@ -6,6 +6,7 @@ use KobaltDigital\PingPong\Actions\CollectSignals;
 use KobaltDigital\PingPong\DatabaseProbe;
 use KobaltDigital\PingPong\Signals\Database;
 use KobaltDigital\PingPong\Signals\FailedJobs;
+use KobaltDigital\PingPong\Signals\Queue;
 
 it('reports the database as reachable with its latency', function () {
     $signal = app(Database::class)->collect();
@@ -40,8 +41,9 @@ it('keeps the error short enough for PingPong to store', function () {
 
 it('connects to a dead database once per tick, however many signals need it', function () {
     config()->set('database.default', 'mysql');
+    config()->set('queue.default', 'database');
     config()->set('queue.failed.database', 'mysql');
-    config()->set('pingpong-agent.signals', [Database::class, FailedJobs::class]);
+    config()->set('pingpong-agent.signals', [Database::class, FailedJobs::class, Queue::class]);
 
     $attempts = 0;
 
@@ -64,6 +66,12 @@ it('connects to a dead database once per tick, however many signals need it', fu
         ],
         'failed_jobs' => [
             'new' => null,
+            'error' => 'SQLSTATE[HY000] [2002] Connection timed out',
+        ],
+        'queue' => [
+            'connection' => 'database',
+            'driver' => 'database',
+            'canary_id' => null,
             'error' => 'SQLSTATE[HY000] [2002] Connection timed out',
         ],
     ])->and($attempts)->toBe(1);

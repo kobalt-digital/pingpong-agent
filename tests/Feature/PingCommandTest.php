@@ -55,6 +55,8 @@ it('sends a tick shaped like the schema 1 fixture', function () {
 
     createFailedJobsTable();
     useDatabaseQueue();
+    insertJob('default', now()->getTimestamp() - 40);
+    insertJob('mail', now()->getTimestamp() - 5);
     useComposerLock(['laravel/framework' => 'v13.2.0']);
 
     app(Schedule::class)->command('backup:run --only-db')
