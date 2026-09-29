@@ -3,13 +3,19 @@
 namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Foundation\Application;
+use KobaltDigital\PingPong\Contracts\Collector;
 use Throwable;
 
-class DiskSignal
+class Disk implements Collector
 {
     use CollectsFacts;
 
     public function __construct(private Application $app) {}
+
+    public function name(): string
+    {
+        return 'disk';
+    }
 
     /**
      * @return array{

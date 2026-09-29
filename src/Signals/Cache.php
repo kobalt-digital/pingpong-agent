@@ -4,15 +4,21 @@ namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Str;
+use KobaltDigital\PingPong\Contracts\Collector;
 use Throwable;
 
-class CacheSignal
+class Cache implements Collector
 {
     use CollectsFacts;
 
     public const PROBE_SECONDS = 60;
 
     public function __construct(private Repository $cache) {}
+
+    public function name(): string
+    {
+        return 'cache';
+    }
 
     /**
      * Writes, reads and removes a key of its own. The overlap lock of the

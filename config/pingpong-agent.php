@@ -1,5 +1,7 @@
 <?php
 
+use KobaltDigital\PingPong\Signals;
+
 return [
 
     /*
@@ -19,5 +21,22 @@ return [
      * PingPong. Without a key the Agent sends nothing and schedules nothing.
      */
     'key' => env('PINGPONG_KEY'),
+
+    /*
+     * Health signals the tick carries, one class per signal. Remove one to
+     * stop sending it. Checks report their own failure and platform facts
+     * leave themselves out, so a collector never needs removing because the
+     * server lacks something.
+     */
+    'signals' => [
+        Signals\Database::class,
+        Signals\Cache::class,
+        Signals\Disk::class,
+        Signals\FailedJobs::class,
+        Signals\Queue::class,
+        Signals\Load::class,
+        Signals\Memory::class,
+        Signals\AppState::class,
+    ],
 
 ];

@@ -3,11 +3,10 @@
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository;
-use Illuminate\Support\Facades\Cache;
-use KobaltDigital\PingPong\Signals\CacheSignal;
+use KobaltDigital\PingPong\Signals\Cache;
 
 it('reports the cache as reachable with its latency', function () {
-    $signal = app(CacheSignal::class)->collect();
+    $signal = app(Cache::class)->collect();
 
     expect($signal['reachable'])->toBeTrue()
         ->and($signal['latency_ms'])->toBeFloat()->toBeGreaterThanOrEqual(0)
@@ -15,15 +14,15 @@ it('reports the cache as reachable with its latency', function () {
 });
 
 it('leaves no probe behind in the cache', function () {
-    app(CacheSignal::class)->collect();
+    app(Cache::class)->collect();
 
-    expect(Cache::getStore()->all())->toBeEmpty();
+    expect(app('cache.store')->getStore()->all())->toBeEmpty();
 });
 
 it('reports an unreachable cache as a fact', function () {
     $this->mock(Repository::class)->shouldReceive('put')->andThrow(new RuntimeException('Connection refused [tcp://127.0.0.1:6379]'));
 
-    $signal = app(CacheSignal::class)->collect();
+    $signal = app(Cache::class)->collect();
 
     expect($signal)->toBe([
         'reachable' => false,
@@ -38,7 +37,7 @@ it('reports a cache that loses what it was given as unreachable', function () {
     $cache->shouldReceive('get')->andReturn(null);
     $cache->shouldReceive('forget');
 
-    $signal = app(CacheSignal::class)->collect();
+    $signal = app(Cache::class)->collect();
 
     expect($signal['reachable'])->toBeFalse()
         ->and($signal['error'])->toBe('The cache did not return the value it was given.');
@@ -52,5 +51,5 @@ it('probes the cache even while the tick holds its overlap lock', function () {
 
     expect($ping->mutex->create($ping))->toBeTrue();
 
-    expect(app(CacheSignal::class)->collect()['reachable'])->toBeTrue();
+    expect(app(Cache::class)->collect()['reachable'])->toBeTrue();
 });

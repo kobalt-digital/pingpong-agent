@@ -46,14 +46,26 @@ php artisan vendor:publish --tag="pingpong-agent-config"
 This is the contents of the published config file:
 
 ```php
+use KobaltDigital\PingPong\Signals;
+
 return [
     'enabled' => env('PINGPONG_ENABLED', true),
     'endpoint' => env('PINGPONG_ENDPOINT', 'https://pingpong.kobaltdigital.nl'),
     'key' => env('PINGPONG_KEY'),
+    'signals' => [
+        Signals\Database::class,
+        Signals\Cache::class,
+        Signals\Disk::class,
+        Signals\FailedJobs::class,
+        Signals\Queue::class,
+        Signals\Load::class,
+        Signals\Memory::class,
+        Signals\AppState::class,
+    ],
 ];
 ```
 
-Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong.
+Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. Removing a class from `signals` stops the tick from sending that signal.
 
 ## Switching it off
 
@@ -63,17 +75,24 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 ## What it sends
 
-**Handshake.** On the first boot with a key set, the Agent posts its version, the PHP version and the Laravel version to PingPong. It sends from `app()->terminating()`, after the response has gone out, so no visitor waits on it. A deploy boots the app anyway (`package:discover`, `migrate`), so the handshake usually lands during the deploy. It is sent once per Agent version; upgrading the package sends a new one. A failed handshake is tried again ten minutes later.
+**Handshake.** On the first boot with a key set, the Agent posts its version, the PHP version, the Laravel version, the OS family (`os`) and the number of CPU cores (`cores`) to PingPong. It sends from `app()->terminating()`, after the response has gone out, so no visitor waits on it. A deploy boots the app anyway (`package:discover`, `migrate`), so the handshake usually lands during the deploy. It is sent once per Agent version; upgrading the package sends a new one. A failed handshake is tried again ten minutes later.
 
-**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
+**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick keeps running while the app is down for maintenance (`php artisan down`), and says so in `app.maintenance`. Queue workers pause while the app is down, so the canary of such a tick does not come back; PingPong should read `app.maintenance` before judging the canary. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
 
-- **Database.** Whether the default connection answers a `select 1`, and how long it took.
+- **Database.** Whether the default connection connects, with a 2 second connect timeout, and answers a `select 1`, and how long the query took.
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
 - **Disk.** Free and total bytes of the disk that holds the app.
 - **Failed jobs.** How many jobs landed in the `failed_jobs` table since the previous tick.
-- **Queue.** Unless the default queue runs jobs without a worker (`sync`, `deferred`, `background`, `null`), every tick dispatches a small canary job to it. The worker that runs the canary reports it back to PingPong, so PingPong knows the workers are alive and how long a job waited. This is the only report that goes through the queue.
+- **Queue.** Unless the default queue runs jobs without a worker (`sync`, `deferred`, `background`, `null`), every tick dispatches a small canary job to it. The worker that runs the canary reports it back to PingPong, so PingPong knows the workers are alive and how long a job waited. This is the only report that goes through the queue. On the `database` driver the tick also counts how many jobs wait per queue and how long the oldest due one has waited.
+- **Load.** The system load average over 1, 5 and 15 minutes.
+- **Memory.** Total and available memory, and swap in use.
+- **App.** Whether the app is in maintenance or debug mode.
 
-These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app.
+These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app. A signal the server cannot provide (memory on macOS, queue backlog on Redis) is simply left out.
+
+The signals are cheap: a few syscalls, one file read and a few small queries. The backlog count reads at most 10000 jobs, so a large backlog does not make it slower. The database signals share one connection to the default database, opened once per tick with a 2 second connect timeout that Laravel retries once. An unreachable default database costs the tick about 4 seconds, and no canary is dispatched to a `database` queue on it. Not bounded: a `select 1` that hangs after connecting, connections other than the default, and the cache signal and overlap lock when the cache store is `database`. Collecting them costs less than booting the scheduler that runs them.
+
+Inside a container, load, memory and cores describe the host machine, not the container's limits.
 
 Every request carries the Agent key as a bearer token, the payload `schema` and the hostname of the sending server. Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried.
 

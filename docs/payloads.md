@@ -23,7 +23,9 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
     "server": "web-01",
     "agent_version": "0.1.0",
     "php_version": "8.4.12",
-    "laravel_version": "13.2.0"
+    "laravel_version": "13.2.0",
+    "os": "Linux",
+    "cores": 4
 }
 ```
 
@@ -32,6 +34,8 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `agent_version` | string | Installed version of this package, as Composer reports it |
 | `php_version` | string | `PHP_VERSION` of the process that sent it |
 | `laravel_version` | string | `app()->version()` |
+| `os` | string | `PHP_OS_FAMILY`: `Linux`, `Darwin`, `Windows`, `BSD`, `Solaris` or `Unknown` |
+| `cores` | integer, optional | Processors listed in `/proc/cpuinfo`. Left out when that file cannot be read, for example on macOS |
 
 ## Tick
 
@@ -64,10 +68,29 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "error": null
         },
         "queue": {
-            "connection": "redis",
-            "driver": "redis",
+            "connection": "database",
+            "driver": "database",
             "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
-            "error": null
+            "error": null,
+            "pending": {
+                "default": 12,
+                "mail": 3
+            },
+            "oldest_pending_seconds": 40
+        },
+        "load": {
+            "1m": 0.81,
+            "5m": 0.62,
+            "15m": 0.55
+        },
+        "memory": {
+            "total_bytes": 8244207616,
+            "available_bytes": 1310720000,
+            "swap_used_bytes": 0
+        },
+        "app": {
+            "maintenance": false,
+            "debug": false
         }
     },
     "tasks": [
@@ -106,7 +129,12 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
 | `inventory` | object, optional | What the app runs on. Only present when `inventory_hash` differs from the last tick PingPong accepted from this `server` |
 
-Every signal is a raw fact measured on the sending server. The Agent never decides whether a value is bad; PingPong owns the thresholds. A check that fails is reported in the signal itself, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
+Every signal is a raw fact measured on the sending server: bytes, seconds and counts, never percentages. The Agent never decides whether a value is bad; PingPong owns the thresholds. Signals follow one of two conventions:
+
+- **Checks** (`database`, `cache`, `disk`, `failed_jobs`, `queue`) are always present. A check that fails reports its own failure in the signal, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
+- **Platform facts** (`load`, `memory`, and the backlog keys of `queue`) are left out when the platform does not provide them. A missing one means unknown, never a problem. They carry no `error`.
+
+`app` is always present. An app can also remove a signal from its `signals` config, and then that signal is missing too. A count that stops at a cap means that number or more. Inside a container, `load`, `memory` and the handshake's `cores` describe the host machine, not the container's limits.
 
 ### `tasks`
 
@@ -139,12 +167,12 @@ Read from the `composer.lock` in the app's base path, so it lists what the lock 
 
 ### `signals.database`
 
-Runs `select 1` on the app's default database connection.
+Connects to the app's default database connection with a 2 second connect timeout, then runs `select 1` on it. Laravel retries a connect that timed out once, so an unreachable database costs about 4 seconds at worst. SQLite has no network connect to bound. The Agent connects once per tick and the other database signals share that connection, so an unreachable database is waited on once. A `select 1` that hangs after connecting is not bounded.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `reachable` | boolean | Whether the query succeeded |
-| `latency_ms` | float or null | Time the query took, connecting included, in milliseconds. `null` when unreachable |
+| `reachable` | boolean | Whether the connect and the query succeeded |
+| `latency_ms` | float or null | Time the query took on the already open connection, in milliseconds. Connecting is not included. `null` when unreachable |
 | `error` | string or null | Why the database was unreachable |
 
 ### `signals.cache`
@@ -173,6 +201,8 @@ Jobs that landed in the failed jobs table (`queue.failed.table`, usually `failed
 
 Every server counts on its own, so an app on two servers reports each failed job twice, once per `server`.
 
+The count reads through the connection `signals.database` opened when `queue.failed.database` is empty or names the default connection. When that connection could not be opened, `new` is `null` and `error` repeats why, without connecting again. Another connection is used as configured, without the short connect timeout.
+
 | Key | Type | Meaning |
 |---|---|---|
 | `new` | integer or null | Number of jobs that failed since the previous tick. `null` when it could not be counted |
@@ -180,9 +210,11 @@ Every server counts on its own, so an app on two servers reports each failed job
 
 ### `signals.queue`
 
-The app's default queue connection (`queue.default`). When its driver uses workers, every tick dispatches a canary job to it and names the canary here. A worker that runs the canary reports it back with a [Canary](#canary). A canary that never comes back means no worker picks up jobs from this queue.
+The app's default queue connection (`queue.default`), in two halves: a canary that proves workers run, and the backlog waiting for them.
 
-No canary is dispatched when the driver runs jobs without a worker: `sync`, `deferred` and `background` run them in the dispatching process, `null` drops them.
+**Canary.** When the driver uses workers, every tick dispatches a canary job to it and names the canary here. A worker that runs the canary reports it back with a [Canary](#canary). A canary that never comes back means no worker picks up jobs from this queue. No canary is dispatched when the driver runs jobs without a worker: `sync`, `deferred` and `background` run them in the dispatching process, `null` drops them. Nor is one dispatched to a `database` queue on the default connection when the connection of `signals.database` could not be opened, since dispatching would wait for that database again; `error` then repeats why. These keys are always present.
+
+**Backlog.** Only the `database` driver keeps its backlog where the Agent can count it cheaply, so `pending` and `oldest_pending_seconds` are left out for every other driver (Redis, SQS, Horizon, `sync`). They are also left out when the queue lives on the default connection and the connection of `signals.database` could not be opened, or when the query fails, for example because the jobs table does not exist; the Agent logs a warning for a failed query. No index answers "unreserved jobs per queue", so the Agent counts at most the 10000 oldest unreserved jobs. A total of `10000` across all queues means 10000 or more. Reserved jobs are being worked on and are not counted. The backlog is read before the canary is dispatched, so this tick's canary is not in it.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -190,6 +222,37 @@ No canary is dispatched when the driver runs jobs without a worker: `sync`, `def
 | `driver` | string or null | Driver of that connection |
 | `canary_id` | string or null | UUID of the canary this tick dispatched. `null` when none was dispatched |
 | `error` | string or null | Why the canary could not be dispatched, for example an unreachable Redis |
+| `pending` | object, optional | Unreserved jobs per queue name, for example `{"default": 12}`. A queue without pending jobs is absent. An empty object when nothing is pending |
+| `oldest_pending_seconds` | integer, optional | Seconds since the oldest pending job became due. Jobs delayed into the future count in `pending` but not here. Left out when no pending job is due |
+
+### `signals.load`
+
+The system load average, from `sys_getloadavg()` or else `/proc/loadavg`. Left out when neither is available. Divide by the handshake's `cores` for load per core.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `1m` | float | Load average over the last minute |
+| `5m` | float | Load average over the last 5 minutes |
+| `15m` | float | Load average over the last 15 minutes |
+
+### `signals.memory`
+
+Read from `/proc/meminfo`. Left out when that file cannot be read, for example on macOS or a shared host with `open_basedir`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `total_bytes` | integer | `MemTotal` |
+| `available_bytes` | integer | `MemAvailable`, what new processes can use without swapping |
+| `swap_used_bytes` | integer | `SwapTotal` minus `SwapFree` |
+
+### `signals.app`
+
+Always present. The tick runs during `php artisan down` too, so `maintenance` can be `true`. Queue workers pause while the app is down, so the canary of a tick with `maintenance: true` does not come back. PingPong should read `app.maintenance` before judging the canary.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `maintenance` | boolean | Whether the app is down for maintenance (`php artisan down`) |
+| `debug` | boolean | Whether `app.debug` (`APP_DEBUG`) is on |
 
 ## Canary
 

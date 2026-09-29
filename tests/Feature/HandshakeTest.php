@@ -4,7 +4,10 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use KobaltDigital\PingPong\Actions\SendHandshake;
 use KobaltDigital\PingPong\AgentVersion;
+use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
 
 const HANDSHAKE_URL = 'https://pingpong.kobaltdigital.nl/api/agent/handshake';
 
@@ -129,4 +132,17 @@ it('does not throw when the cache is unavailable', function () {
     Http::fake([HANDSHAKE_URL => Http::response()]);
 
     expect(fn () => app()->terminate())->not->toThrow(Exception::class);
+});
+
+it('leaves cores out when the host does not know', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    app()->instance(Host::class, new FakeHost(cores: null));
+
+    Http::fake([HANDSHAKE_URL => Http::response()]);
+
+    app(SendHandshake::class)->execute();
+
+    Http::assertSent(fn (Request $request) => ! array_key_exists('cores', $request->data())
+        && $request->data()['os'] === PHP_OS_FAMILY);
 });

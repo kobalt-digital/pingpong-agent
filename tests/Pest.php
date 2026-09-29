@@ -61,11 +61,12 @@ function failJobs(int $count): void
     }
 }
 
-function useDatabaseQueue(): void
+function useDatabaseQueue(?string $connection = null): void
 {
     config()->set('queue.default', 'database');
+    config()->set('queue.connections.database.connection', $connection);
 
-    Schema::create('jobs', function (Blueprint $table) {
+    Schema::connection($connection)->create('jobs', function (Blueprint $table) {
         $table->id();
         $table->string('queue')->index();
         $table->longText('payload');
@@ -74,6 +75,18 @@ function useDatabaseQueue(): void
         $table->unsignedInteger('available_at');
         $table->unsignedInteger('created_at');
     });
+}
+
+function insertJob(string $queue, int $availableAt, ?int $reservedAt = null, ?string $connection = null): void
+{
+    DB::connection($connection)->table('jobs')->insert([
+        'queue' => $queue,
+        'payload' => '{}',
+        'attempts' => 0,
+        'reserved_at' => $reservedAt,
+        'available_at' => $availableAt,
+        'created_at' => $availableAt,
+    ]);
 }
 
 /**

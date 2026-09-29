@@ -17,7 +17,7 @@ function scheduledPings(): array
         ->all();
 }
 
-it('runs the ping every minute in the foreground without overlapping', function () {
+it('runs the ping every minute in the foreground without overlapping, even in maintenance mode', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
     $pings = scheduledPings();
@@ -25,7 +25,8 @@ it('runs the ping every minute in the foreground without overlapping', function 
     expect($pings)->toHaveCount(1)
         ->and($pings[0]->expression)->toBe('* * * * *')
         ->and($pings[0]->withoutOverlapping)->toBeTrue()
-        ->and($pings[0]->runInBackground)->toBeFalse();
+        ->and($pings[0]->runInBackground)->toBeFalse()
+        ->and($pings[0]->evenInMaintenanceMode)->toBeTrue();
 });
 
 it('schedules nothing without a key', function () {
@@ -54,6 +55,8 @@ it('sends a tick shaped like the schema 1 fixture', function () {
 
     createFailedJobsTable();
     useDatabaseQueue();
+    insertJob('default', now()->getTimestamp() - 40);
+    insertJob('mail', now()->getTimestamp() - 5);
     useComposerLock(['laravel/framework' => 'v13.2.0']);
 
     app(Schedule::class)->command('backup:run --only-db')

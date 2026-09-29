@@ -5,14 +5,14 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use KobaltDigital\PingPong\Jobs\ReportQueueCanary;
-use KobaltDigital\PingPong\Signals\QueueSignal;
+use KobaltDigital\PingPong\Signals\Queue;
 
 const CANARY_URL = 'https://pingpong.kobaltdigital.nl/api/agent/canary';
 
 it('dispatches no canary on the sync queue', function () {
     Bus::fake();
 
-    $signal = app(QueueSignal::class)->collect();
+    $signal = app(Queue::class)->collect();
 
     Bus::assertNothingDispatched();
 
@@ -30,7 +30,7 @@ it('dispatches no canary to a queue that runs without a worker', function (strin
 
     Bus::fake();
 
-    $signal = app(QueueSignal::class)->collect();
+    $signal = app(Queue::class)->collect();
 
     Bus::assertNothingDispatched();
 
@@ -43,7 +43,7 @@ it('dispatches a canary to a queue with workers', function () {
 
     Bus::fake();
 
-    $signal = app(QueueSignal::class)->collect();
+    $signal = app(Queue::class)->collect();
 
     Bus::assertDispatchedTimes(ReportQueueCanary::class, 1);
     Bus::assertDispatched(ReportQueueCanary::class, fn (ReportQueueCanary $canary) => $canary->canaryId === $signal['canary_id']);
@@ -57,7 +57,7 @@ it('dispatches a canary to a queue with workers', function () {
 it('reports a queue it cannot dispatch to as a fact', function () {
     config()->set('queue.default', 'database');
 
-    $signal = app(QueueSignal::class)->collect();
+    $signal = app(Queue::class)->collect();
 
     expect($signal['canary_id'])->toBeNull()
         ->and($signal['error'])->toContain('jobs');

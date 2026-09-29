@@ -6,23 +6,15 @@ use Illuminate\Http\Client\Response;
 use KobaltDigital\PingPong\DeliveredHashes;
 use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
-use KobaltDigital\PingPong\Signals\CacheSignal;
-use KobaltDigital\PingPong\Signals\DatabaseSignal;
-use KobaltDigital\PingPong\Signals\DiskSignal;
-use KobaltDigital\PingPong\Signals\FailedJobsSignal;
-use KobaltDigital\PingPong\Signals\QueueSignal;
 use KobaltDigital\PingPong\Transport;
+use stdClass;
 use Throwable;
 
 class SendTick
 {
     public function __construct(
         private Transport $transport,
-        private DatabaseSignal $database,
-        private CacheSignal $cache,
-        private DiskSignal $disk,
-        private FailedJobsSignal $failedJobs,
-        private QueueSignal $queue,
+        private CollectSignals $collectSignals,
         private ScheduleManifest $schedule,
         private Inventory $inventory,
         private DeliveredHashes $deliveredHashes,
@@ -40,16 +32,12 @@ class SendTick
 
         $inventoryIsNew = $this->deliveredHashes->isNew('inventory', $inventoryHash);
 
+        $signals = $this->collectSignals->execute();
+
         $payload = [
             'schedule_hash' => $scheduleHash,
             'inventory_hash' => $inventoryHash,
-            'signals' => [
-                'database' => $this->database->collect(),
-                'cache' => $this->cache->collect(),
-                'disk' => $this->disk->collect(),
-                'failed_jobs' => $this->failedJobs->collect(),
-                'queue' => $this->queue->collect(),
-            ],
+            'signals' => $signals === [] ? new stdClass : $signals,
         ];
 
         if ($scheduleIsNew) {

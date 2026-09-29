@@ -4,20 +4,26 @@ namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Connection;
-use Illuminate\Database\DatabaseManager;
+use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\DatabaseProbe;
 use KobaltDigital\PingPong\Server;
 use Throwable;
 
-class FailedJobsSignal
+class FailedJobs implements Collector
 {
     use CollectsFacts;
 
     public const DATABASE_DRIVERS = ['database', 'database-uuids'];
 
     public function __construct(
-        private DatabaseManager $database,
+        private DatabaseProbe $probe,
         private Repository $cache,
     ) {}
+
+    public function name(): string
+    {
+        return 'failed_jobs';
+    }
 
     /**
      * @return array{
@@ -34,10 +40,13 @@ class FailedJobsSignal
         }
 
         try {
-            return $this->countSinceLastTick(
-                $this->database->connection(config('queue.failed.database')),
-                config('queue.failed.table', 'failed_jobs'),
-            );
+            $connection = $this->probe->connectionFor(config('queue.failed.database'));
+
+            if ($connection === null) {
+                return $this->unknown((string) $this->probe->error());
+            }
+
+            return $this->countSinceLastTick($connection, config('queue.failed.table', 'failed_jobs'));
         } catch (Throwable $exception) {
             return $this->unknown($exception->getMessage());
         }
