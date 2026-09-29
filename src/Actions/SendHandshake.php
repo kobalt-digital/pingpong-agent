@@ -6,6 +6,7 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\AgentVersion;
+use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\Transport;
 use Throwable;
 
@@ -18,6 +19,7 @@ class SendHandshake
         private AgentVersion $agentVersion,
         private Repository $cache,
         private Application $app,
+        private Host $host,
     ) {}
 
     /**
@@ -53,6 +55,8 @@ class SendHandshake
             'agent_version' => $version,
             'php_version' => PHP_VERSION,
             'laravel_version' => $this->app->version(),
+            'os' => PHP_OS_FAMILY,
+            ...$this->cores(),
         ]);
 
         if (! $delivered) {
@@ -60,5 +64,17 @@ class SendHandshake
         }
 
         $this->cache->forever("pingpong-agent:handshake:{$version}", true);
+    }
+
+    /** @return array{cores?: int} */
+    private function cores(): array
+    {
+        $cores = $this->host->cores();
+
+        if ($cores === null) {
+            return [];
+        }
+
+        return ['cores' => $cores];
     }
 }

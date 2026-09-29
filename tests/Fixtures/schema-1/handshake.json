@@ -3,5 +3,7 @@
     "server": "web-01",
     "agent_version": "0.1.0",
     "php_version": "8.4.12",
-    "laravel_version": "13.2.0"
+    "laravel_version": "13.2.0",
+    "os": "Linux",
+    "cores": 4
 }
