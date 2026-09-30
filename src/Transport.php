@@ -6,6 +6,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Psr\Http\Message\RequestInterface;
 use Throwable;
 
 class Transport
@@ -13,6 +14,8 @@ class Transport
     public const SCHEMA = 1;
 
     public const TIMEOUT_SECONDS = 5;
+
+    public const MAX_REDIRECTS = 3;
 
     public function __construct(private Application $app) {}
 
@@ -56,11 +59,20 @@ class Transport
             return null;
         }
 
+        $endpoint = rtrim(config('pingpong-agent.endpoint'), '/');
+        $key = config('pingpong-agent.key');
+
         try {
-            $response = Http::baseUrl(rtrim(config('pingpong-agent.endpoint'), '/'))
-                ->withToken(config('pingpong-agent.key'))
+            $response = Http::baseUrl($endpoint)
+                ->withToken($key)
                 ->acceptJson()
                 ->timeout(self::TIMEOUT_SECONDS)
+                ->withOptions(['allow_redirects' => [
+                    'max' => self::MAX_REDIRECTS,
+                    'strict' => true,
+                    'track_redirects' => true,
+                ]])
+                ->withRequestMiddleware(fn (RequestInterface $request) => $this->keepKeyOnEndpointHost($request, $endpoint, $key))
                 ->post($path, [
                     'schema' => self::SCHEMA,
                     'server' => Server::name(),
@@ -74,7 +86,48 @@ class Transport
             return null;
         }
 
+        $this->warnWhenRedirected($path, $response);
+
         return $this->wasDelivered($path, $response) ? $response : null;
+    }
+
+    /**
+     * Guzzle drops the key on a cross-origin redirect, and http to https is
+     * one. The key goes back on only while the redirect stays on the
+     * configured host, so it never follows a redirect elsewhere.
+     */
+    private function keepKeyOnEndpointHost(RequestInterface $request, string $endpoint, string $key): RequestInterface
+    {
+        if ($request->hasHeader('Authorization') || $request->getUri()->getHost() !== parse_url($endpoint, PHP_URL_HOST)) {
+            return $request;
+        }
+
+        return $request->withHeader('Authorization', "Bearer {$key}");
+    }
+
+    /**
+     * Redirects are followed in strict mode so the POST survives a 301 or 302,
+     * but the endpoint is still wrong, so say which URL to configure.
+     */
+    private function warnWhenRedirected(string $path, Response $response): void
+    {
+        $history = $response->toPsrResponse()->getHeader('X-Guzzle-Redirect-History');
+
+        if ($history === []) {
+            return;
+        }
+
+        $finalUrl = end($history);
+        $suffix = '/'.ltrim($path, '/');
+
+        if (str_ends_with($finalUrl, $suffix)) {
+            $finalUrl = substr($finalUrl, 0, -strlen($suffix));
+        }
+
+        Log::warning("PingPong endpoint redirected to {$finalUrl}; set PINGPONG_ENDPOINT to that URL (usually https).", [
+            'path' => $path,
+            'redirects' => count($history),
+        ]);
     }
 
     private function wasDelivered(string $path, Response $response): bool
