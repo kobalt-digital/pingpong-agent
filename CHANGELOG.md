@@ -2,6 +2,14 @@
 
 All notable changes to `pingpong-agent` will be documented in this file.
 
+## v1.1.0 - 2026-10-15
+
+### What's Changed
+
+* Tick interval per environment by @kylwes in https://github.com/kobalt-digital/pingpong-agent/pull/10
+
+**Full Changelog**: https://github.com/kobalt-digital/pingpong-agent/compare/v1.0.0...v1.1.0
+
 ## v1.0.0 - 2026-10-15
 
 ### What's Changed
