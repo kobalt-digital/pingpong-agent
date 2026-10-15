@@ -23,6 +23,13 @@ return [
     'key' => env('PINGPONG_KEY'),
 
     /*
+     * How often the scheduler sends a tick, in minutes. Must divide 60, so
+     * 1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30. Any other value ticks every
+     * minute.
+     */
+    'tick_minutes' => env('PINGPONG_TICK_MINUTES', 1),
+
+    /*
      * Health signals the tick carries, one class per signal. Remove one to
      * stop sending it. Checks report their own failure and platform facts
      * leave themselves out, so a collector never needs removing because the

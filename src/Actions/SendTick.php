@@ -6,6 +6,7 @@ use Illuminate\Http\Client\Response;
 use KobaltDigital\PingPong\DeliveredHashes;
 use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
+use KobaltDigital\PingPong\TickInterval;
 use KobaltDigital\PingPong\Transport;
 use stdClass;
 use Throwable;
@@ -18,6 +19,7 @@ class SendTick
         private ScheduleManifest $schedule,
         private Inventory $inventory,
         private DeliveredHashes $deliveredHashes,
+        private TickInterval $tickInterval,
     ) {}
 
     public function execute(): bool
@@ -35,6 +37,7 @@ class SendTick
         $signals = $this->collectSignals->execute();
 
         $payload = [
+            'tick_minutes' => $this->tickInterval->minutes,
             'schedule_hash' => $scheduleHash,
             'inventory_hash' => $inventoryHash,
             'signals' => $signals === [] ? new stdClass : $signals,

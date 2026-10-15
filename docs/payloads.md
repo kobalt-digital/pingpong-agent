@@ -39,12 +39,13 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 
 ## Tick
 
-`POST /api/agent/tick`, every minute from `pingpong:ping`.
+`POST /api/agent/tick`, from `pingpong:ping`. Every minute unless the app sets `PINGPONG_TICK_MINUTES`.
 
 ```json
 {
     "schema": 1,
     "server": "web-01",
+    "tick_minutes": 1,
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "inventory_hash": "8e2b4d6f0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b",
     "signals": {
@@ -136,6 +137,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 
 | Key | Type | Meaning |
 |---|---|---|
+| `tick_minutes` | integer | Minutes until the next tick is due: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30. Tells PingPong when the next tick is late |
 | `schedule_hash` | string | SHA-256 of the task list below, whether or not the list is sent |
 | `inventory_hash` | string | SHA-256 over the PHP version, the Laravel version and the bytes of `composer.lock`, whether or not the inventory is sent |
 | `signals` | object | Health signals keyed by name, always a JSON object |

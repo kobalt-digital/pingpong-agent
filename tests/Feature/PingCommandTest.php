@@ -4,8 +4,10 @@ use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
@@ -30,6 +32,50 @@ it('runs the ping every minute in the foreground without overlapping, even in ma
         ->and($pings[0]->withoutOverlapping)->toBeTrue()
         ->and($pings[0]->runInBackground)->toBeFalse()
         ->and($pings[0]->evenInMaintenanceMode)->toBeTrue();
+});
+
+it('runs the ping at the interval the environment sets', function (int|string $minutes, string $expression) {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.tick_minutes', $minutes);
+
+    expect(scheduledPings()[0]->expression)->toBe($expression);
+})->with([
+    'every five minutes' => [5, '*/5 * * * *'],
+    'from the env as a string' => ['15', '*/15 * * * *'],
+    'every minute' => [1, '* * * * *'],
+]);
+
+it('runs the ping every minute when the interval does not divide an hour', function (int|string $minutes) {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.tick_minutes', $minutes);
+
+    Log::spy();
+
+    expect(scheduledPings()[0]->expression)->toBe('* * * * *');
+
+    Log::shouldHaveReceived('warning')->once();
+})->with([7, 0, -5, 'five']);
+
+it('runs the ping every minute with a config published before the interval existed', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent', Arr::except(config('pingpong-agent'), 'tick_minutes'));
+
+    Log::spy();
+
+    expect(scheduledPings()[0]->expression)->toBe('* * * * *');
+
+    Log::shouldNotHaveReceived('warning');
+});
+
+it('tells PingPong the interval in the tick', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set('pingpong-agent.tick_minutes', 5);
+
+    Http::fake([TICK_URL => Http::response()]);
+
+    $this->artisan('pingpong:ping')->assertSuccessful();
+
+    Http::assertSent(fn (Request $request) => $request['tick_minutes'] === 5);
 });
 
 it('schedules nothing without a key', function () {

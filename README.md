@@ -5,7 +5,7 @@
 [![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/kobalt-digital/pingpong-agent/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/kobalt-digital/pingpong-agent/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/kobaltdigital/pingpong-agent.svg?style=flat-square)](https://packagist.org/packages/kobaltdigital/pingpong-agent)
 
-The Agent reports a Laravel app to [PingPong](https://pingpong.kobaltdigital.nl), the uptime and incident platform of Kobalt Digital. Once installed it announces itself to PingPong and ticks every minute from the app's own scheduler, so PingPong raises an Incident when the scheduler stops.
+The Agent reports a Laravel app to [PingPong](https://pingpong.kobaltdigital.nl), the uptime and incident platform of Kobalt Digital. Once installed it announces itself to PingPong and ticks every minute (configurable per environment) from the app's own scheduler, so PingPong raises an Incident when the scheduler stops.
 
 This package is built for internal use at Kobalt Digital. It is public so client apps can install it without credentials, but it comes without support. Issues and pull requests from outside Kobalt Digital may go unanswered.
 
@@ -52,6 +52,7 @@ return [
     'enabled' => env('PINGPONG_ENABLED', true),
     'endpoint' => env('PINGPONG_ENDPOINT', 'https://pingpong.kobaltdigital.nl'),
     'key' => env('PINGPONG_KEY'),
+    'tick_minutes' => env('PINGPONG_TICK_MINUTES', 1),
     'signals' => [
         Signals\Database::class,
         Signals\Cache::class,
@@ -68,6 +69,8 @@ return [
 
 Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It must be the final `https` URL. The Agent still follows a redirect, but logs a warning naming the URL to set instead. Removing a class from `signals` stops the tick from sending that signal.
 
+The tick runs every minute. Set `PINGPONG_TICK_MINUTES` to tick less often on one environment, for example `5` on acceptance. The value must divide 60 (1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30); any other value logs a warning and ticks every minute. Each tick carries its interval, so PingPong can tell a slower environment from a late tick.
+
 ## Switching it off
 
 Set `PINGPONG_ENABLED=false` to silence the Agent without removing the key, for example on a local machine that has a copy of the production `.env`. The Agent then sends no handshake and adds nothing to the schedule.
@@ -78,7 +81,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 **Handshake.** On the first boot with a key set, the Agent posts its version, the PHP version, the Laravel version, the OS family (`os`) and the number of CPU cores (`cores`) to PingPong. It sends from `app()->terminating()`, after the response has gone out, so no visitor waits on it. A deploy boots the app anyway (`package:discover`, `migrate`), so the handshake usually lands during the deploy. It is sent once per Agent version; upgrading the package sends a new one. A failed handshake is tried again ten minutes later.
 
-**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute in the foreground with `withoutOverlapping`, and posts a tick. The tick keeps running while the app is down for maintenance (`php artisan down`), and says so in `app.maintenance`. Queue workers pause while the app is down, so the canary of such a tick does not come back; PingPong should read `app.maintenance` before judging the canary. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
+**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute (or every `PINGPONG_TICK_MINUTES`) in the foreground with `withoutOverlapping`, and posts a tick. The tick keeps running while the app is down for maintenance (`php artisan down`), and says so in `app.maintenance`. Queue workers pause while the app is down, so the canary of such a tick does not come back; PingPong should read `app.maintenance` before judging the canary. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
 
 - **Database.** Whether the default connection connects, with a 2 second connect timeout, and answers a `select 1`, and how long the query took.
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
