@@ -3,6 +3,7 @@
 namespace KobaltDigital\PingPong\Tests;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\PingPongServiceProvider;
 use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
@@ -15,6 +16,7 @@ class TestCase extends Orchestra
         parent::setUp();
 
         Http::preventStrayRequests();
+        Process::preventStrayProcesses();
 
         $this->app->instance(Host::class, new FakeHost);
     }

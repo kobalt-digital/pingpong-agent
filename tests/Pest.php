@@ -35,6 +35,31 @@ function payloadShape(mixed $value): mixed
     return $shape;
 }
 
+/**
+ * Runs the callback with the given environment variables, where null unsets
+ * one, and restores them afterwards.
+ *
+ * @param  array<string, ?string>  $variables
+ */
+function withEnv(array $variables, Closure $callback): mixed
+{
+    $original = [];
+
+    foreach ($variables as $name => $value) {
+        $original[$name] = getenv($name);
+
+        putenv($value === null ? $name : "{$name}={$value}");
+    }
+
+    try {
+        return $callback();
+    } finally {
+        foreach ($original as $name => $value) {
+            putenv($value === false ? $name : "{$name}={$value}");
+        }
+    }
+}
+
 function createFailedJobsTable(): void
 {
     Schema::create('failed_jobs', function (Blueprint $table) {

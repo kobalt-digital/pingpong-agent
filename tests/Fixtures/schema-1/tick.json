@@ -47,6 +47,19 @@
         "app": {
             "maintenance": false,
             "debug": false
+        },
+        "pm2": {
+            "processes": [
+                {
+                    "id": 0,
+                    "name": "queue-worker",
+                    "status": "online",
+                    "restarts": 3,
+                    "uptime_seconds": 86400,
+                    "memory_bytes": 52428800
+                }
+            ],
+            "error": null
         }
     },
     "tasks": [
