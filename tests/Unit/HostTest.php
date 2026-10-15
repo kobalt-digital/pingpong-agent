@@ -50,3 +50,52 @@ it('reads a load average on this machine or gives null', function () {
 
     expect($load === null || array_keys($load) === ['1m', '5m', '15m'])->toBeTrue();
 });
+
+it('finds an executable on the PATH without running anything', function () {
+    $directory = sys_get_temp_dir().'/pingpong-bin-'.uniqid();
+    mkdir($directory);
+    touch("{$directory}/pm2");
+    chmod("{$directory}/pm2", 0755);
+
+    try {
+        expect(withEnv(['PATH' => "/nonexistent:{$directory}"], fn () => (new Host)->executable('pm2')))
+            ->toBe("{$directory}/pm2");
+    } finally {
+        unlink("{$directory}/pm2");
+        rmdir($directory);
+    }
+});
+
+it('gives no executable when it is not on the PATH', function () {
+    expect(withEnv(['PATH' => '/nonexistent'], fn () => (new Host)->executable('pm2')))->toBeNull();
+});
+
+it('knows a pid file of a live process runs', function () {
+    $path = tempnam(sys_get_temp_dir(), 'pingpong-pid-');
+    file_put_contents($path, getmypid()."\n");
+
+    try {
+        expect((new Host)->pidFileRuns($path))->toBeTrue();
+    } finally {
+        unlink($path);
+    }
+});
+
+it('knows a pid file that outlived its process does not run', function (string $contents) {
+    $path = tempnam(sys_get_temp_dir(), 'pingpong-pid-');
+    file_put_contents($path, $contents);
+
+    try {
+        expect((new Host)->pidFileRuns($path))->toBeFalse();
+    } finally {
+        unlink($path);
+    }
+})->with([
+    'a pid that does not run' => '99999999',
+    'an empty file' => '',
+    'no number' => 'pm2',
+]);
+
+it('knows a missing pid file does not run', function () {
+    expect((new Host)->pidFileRuns('/nonexistent/pm2.pid'))->toBeFalse();
+});

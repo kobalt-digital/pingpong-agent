@@ -103,6 +103,44 @@ class Host
         return $count;
     }
 
+    /**
+     * Where an executable is on the PATH of this process, null when it is
+     * not. Looked up by hand rather than with Symfony's ExecutableFinder,
+     * which falls back to a shell: a server without it pays one PATH scan.
+     */
+    public function executable(string $name): ?string
+    {
+        foreach (explode(PATH_SEPARATOR, (string) getenv('PATH')) as $directory) {
+            if ($directory === '') {
+                continue;
+            }
+
+            $candidate = rtrim($directory, '/')."/{$name}";
+
+            if (@is_file($candidate) && @is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the pid file holds the pid of a live process. A daemon that
+     * died uncleanly leaves its pid file behind, so the pid in it must still
+     * be alive.
+     */
+    public function pidFileRuns(string $path): bool
+    {
+        $pid = trim((string) $this->read($path));
+
+        if (! ctype_digit($pid) || (int) $pid === 0) {
+            return false;
+        }
+
+        return $this->processRuns((int) $pid);
+    }
+
     /** @return array{'1m': float, '5m': float, '15m': float} */
     private function loadShape(float $oneMinute, float $fiveMinutes, float $fifteenMinutes): array
     {
@@ -111,6 +149,23 @@ class Host
             '5m' => $fiveMinutes,
             '15m' => $fifteenMinutes,
         ];
+    }
+
+    /**
+     * Without `/proc` and without ext-posix nothing can tell, and then the
+     * process is taken to run, as the pid file says.
+     */
+    private function processRuns(int $pid): bool
+    {
+        if (@is_dir("/proc/{$pid}")) {
+            return true;
+        }
+
+        if (function_exists('posix_kill')) {
+            return @posix_kill($pid, 0);
+        }
+
+        return ! @is_dir('/proc');
     }
 
     /**

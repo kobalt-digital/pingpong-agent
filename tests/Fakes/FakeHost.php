@@ -9,11 +9,15 @@ class FakeHost extends Host
     /**
      * @param  array{'1m': float, '5m': float, '15m': float}|null  $loadAverage
      * @param  array{total_bytes: int, available_bytes: int, swap_used_bytes: int}|null  $memInfo
+     * @param  array<string, string>  $executables
+     * @param  list<string>  $livePidFiles
      */
     public function __construct(
         private ?array $loadAverage = ['1m' => 0.81, '5m' => 0.62, '15m' => 0.55],
         private ?array $memInfo = ['total_bytes' => 8244207616, 'available_bytes' => 1310720000, 'swap_used_bytes' => 0],
         private ?int $cores = 4,
+        private array $executables = [],
+        private array $livePidFiles = [],
     ) {}
 
     public function loadAverage(): ?array
@@ -29,5 +33,15 @@ class FakeHost extends Host
     public function cores(): ?int
     {
         return $this->cores;
+    }
+
+    public function executable(string $name): ?string
+    {
+        return $this->executables[$name] ?? null;
+    }
+
+    public function pidFileRuns(string $path): bool
+    {
+        return in_array($path, $this->livePidFiles, true);
     }
 }
