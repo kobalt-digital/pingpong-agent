@@ -6,6 +6,9 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
+use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
 
 const TICK_URL = 'https://pingpong.kobaltdigital.nl/api/agent/tick';
 
@@ -53,6 +56,14 @@ it('schedules nothing while the app runs its unit tests', function () {
 it('sends a tick shaped like the schema 1 fixture', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
+    $this->app->instance(Host::class, new FakeHost(executables: ['pm2' => '/usr/bin/pm2'], livePidFiles: ['/srv/pm2/pm2.pid']));
+    Process::fake(['*' => Process::result(json_encode([[
+        'name' => 'queue-worker',
+        'pm_id' => 0,
+        'monit' => ['memory' => 52428800],
+        'pm2_env' => ['status' => 'online', 'restart_time' => 3, 'pm_uptime' => now()->subDay()->getTimestampMs()],
+    ]]))]);
+
     createFailedJobsTable();
     useDatabaseQueue();
     insertJob('default', now()->getTimestamp() - 40);
@@ -66,7 +77,9 @@ it('sends a tick shaped like the schema 1 fixture', function () {
 
     Http::fake([TICK_URL => Http::response()]);
 
-    $this->artisan('pingpong:ping')->assertSuccessful();
+    withEnv(['PM2_HOME' => '/srv/pm2'], function () {
+        $this->artisan('pingpong:ping')->assertSuccessful();
+    });
 
     Http::assertSent(fn (Request $request) => $request->hasHeader('Authorization', 'Bearer pp_agent_test')
         && payloadShape(json_decode($request->body())) === payloadShape(payloadFixture('tick')));

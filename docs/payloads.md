@@ -91,6 +91,19 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
         "app": {
             "maintenance": false,
             "debug": false
+        },
+        "pm2": {
+            "processes": [
+                {
+                    "id": 0,
+                    "name": "queue-worker",
+                    "status": "online",
+                    "restarts": 3,
+                    "uptime_seconds": 86400,
+                    "memory_bytes": 52428800
+                }
+            ],
+            "error": null
         }
     },
     "tasks": [
@@ -129,10 +142,11 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
 | `inventory` | object, optional | What the app runs on. Only present when `inventory_hash` differs from the last tick PingPong accepted from this `server` |
 
-Every signal is a raw fact measured on the sending server: bytes, seconds and counts, never percentages. The Agent never decides whether a value is bad; PingPong owns the thresholds. Signals follow one of two conventions:
+Every signal is a raw fact measured on the sending server: bytes, seconds and counts, never percentages. The Agent never decides whether a value is bad; PingPong owns the thresholds. Signals follow one of three conventions:
 
 - **Checks** (`database`, `cache`, `disk`, `failed_jobs`, `queue`) are always present. A check that fails reports its own failure in the signal, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
 - **Platform facts** (`load`, `memory`, and the backlog keys of `queue`) are left out when the platform does not provide them. A missing one means unknown, never a problem. They carry no `error`.
+- **Optional checks** (`pm2`) are left out when the server lacks the tool they read, which means unknown. When it is there, they behave like a check.
 
 `app` is always present. An app can also remove a signal from its `signals` config, and then that signal is missing too. A count that stops at a cap means that number or more. Inside a container, `load`, `memory` and the handshake's `cores` describe the host machine, not the container's limits.
 
@@ -253,6 +267,23 @@ Always present. The tick runs during `php artisan down` too, so `maintenance` ca
 |---|---|---|
 | `maintenance` | boolean | Whether the app is down for maintenance (`php artisan down`) |
 | `debug` | boolean | Whether `app.debug` (`APP_DEBUG`) is on |
+
+### `signals.pm2`
+
+Every process PM2 runs for the user that runs the scheduler, read with `pm2 jlist` with a 3 second timeout. Left out when `pm2` is not on the `PATH`. The Agent runs no PM2 command while no daemon runs, since every PM2 command starts a daemon when none runs; `processes` is then an empty list, as no process runs. The daemon runs when `$PM2_HOME/pm2.pid` (`PM2_HOME` defaulting to `~/.pm2`) holds the pid of a live process, checked through `/proc` or ext-posix. A pid file left behind by a daemon that died does not count. When neither `/proc` nor ext-posix can tell, the pid file alone counts. Notices PM2 prints before its JSON are skipped, also those that open with `[`. Only the keys below leave the server: `pm2 jlist` also carries the environment of every process, which is never sent.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `processes` | array or null | Every listed process with a `pm_id`, a `name` and a `pm2_env.status`, sorted by `id`, at most 100. An empty list when no daemon runs. `null` when the list could not be read |
+| `processes[].id` | integer | `pm_id` |
+| `processes[].name` | string | `name`, at most 255 characters. Instances of one app in cluster mode share it |
+| `processes[].status` | string | `pm2_env.status`, for example `online`, `stopped`, `errored`, `launching` or `waiting restart` |
+| `processes[].restarts` | integer | `pm2_env.restart_time`, 0 when PM2 leaves it out |
+| `processes[].uptime_seconds` | integer or null | Seconds since the process started, while `online`. `null` otherwise |
+| `processes[].memory_bytes` | integer or null | `monit.memory`. `null` when PM2 leaves it out |
+| `error` | string or null | Why the list could not be read: no `PM2_HOME` or `HOME`, a timeout, a failed exit or output without a JSON list |
+
+The cost is one `node` process per tick on a server that runs PM2, and a `PATH` scan and one file check on every other server.
 
 ## Canary
 
