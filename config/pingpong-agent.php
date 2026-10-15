@@ -37,6 +37,7 @@ return [
         Signals\Load::class,
         Signals\Memory::class,
         Signals\AppState::class,
+        Signals\Pm2::class,
     ],
 
 ];
