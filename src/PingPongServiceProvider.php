@@ -34,6 +34,9 @@ class PingPongServiceProvider extends PackageServiceProvider
 
         // One probe per process, so the database signals share one connect attempt.
         $this->app->singleton(DatabaseProbe::class);
+
+        // Resolved once per process, so a bad interval is warned about once.
+        $this->app->singleton(TickInterval::class);
     }
 
     public function packageBooted(): void
@@ -54,7 +57,7 @@ class PingPongServiceProvider extends PackageServiceProvider
             }
 
             $schedule->command(PingCommand::class)
-                ->everyMinute()
+                ->cron($this->app->make(TickInterval::class)->cron())
                 ->evenInMaintenanceMode()
                 ->withoutOverlapping(self::LOCK_EXPIRES_AFTER_MINUTES);
         });
