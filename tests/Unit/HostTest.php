@@ -58,13 +58,13 @@ it('finds an executable on the PATH without running anything', function () {
     chmod("{$directory}/pm2", 0755);
 
     try {
-        expect(withEnv(['PATH' => "/nonexistent:{$directory}"], fn () => (new Host)->executable('pm2')))
+        expect(withEnv(['PATH' => '/nonexistent'.PATH_SEPARATOR.$directory], fn () => (new Host)->executable('pm2')))
             ->toBe("{$directory}/pm2");
     } finally {
         unlink("{$directory}/pm2");
         rmdir($directory);
     }
-});
+})->skipOnWindows();
 
 it('gives no executable when it is not on the PATH', function () {
     expect(withEnv(['PATH' => '/nonexistent'], fn () => (new Host)->executable('pm2')))->toBeNull();
@@ -81,7 +81,18 @@ it('knows a pid file of a live process runs', function () {
     }
 });
 
-it('knows a pid file that outlived its process does not run', function (string $contents) {
+it('knows a pid file that outlived its process does not run', function () {
+    $path = tempnam(sys_get_temp_dir(), 'pingpong-pid-');
+    file_put_contents($path, '99999999');
+
+    try {
+        expect((new Host)->pidFileRuns($path))->toBeFalse();
+    } finally {
+        unlink($path);
+    }
+})->skip(! is_dir('/proc') && ! function_exists('posix_kill'), 'Without /proc and ext-posix a pid file counts as running');
+
+it('knows a pid file without a pid does not run', function (string $contents) {
     $path = tempnam(sys_get_temp_dir(), 'pingpong-pid-');
     file_put_contents($path, $contents);
 
@@ -91,7 +102,6 @@ it('knows a pid file that outlived its process does not run', function (string $
         unlink($path);
     }
 })->with([
-    'a pid that does not run' => '99999999',
     'an empty file' => '',
     'no number' => 'pm2',
 ]);
