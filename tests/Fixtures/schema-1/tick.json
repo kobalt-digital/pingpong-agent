@@ -61,6 +61,20 @@
                 }
             ],
             "error": null
+        },
+        "flare": {
+            "client": "spatie/laravel-flare",
+            "client_version": "3.2.1",
+            "key_set": true,
+            "key_hash": "3f1c9a0e",
+            "report": true,
+            "handler_wired": true,
+            "sender": "daemon",
+            "daemon_reachable": true,
+            "key_accepted": true,
+            "key_status": 201,
+            "key_checked_at": "2026-10-26T13:00:00+00:00",
+            "error": null
         }
     },
     "tasks": [

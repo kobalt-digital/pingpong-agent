@@ -5,8 +5,10 @@ namespace KobaltDigital\PingPong\Tests;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\InstalledPackages;
 use KobaltDigital\PingPong\PingPongServiceProvider;
 use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
+use KobaltDigital\PingPong\Tests\Fakes\FakeInstalledPackages;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 class TestCase extends Orchestra
@@ -19,6 +21,7 @@ class TestCase extends Orchestra
         Process::preventStrayProcesses();
 
         $this->app->instance(Host::class, new FakeHost);
+        $this->app->instance(InstalledPackages::class, new FakeInstalledPackages);
     }
 
     protected function getPackageProviders($app): array

@@ -2,6 +2,7 @@
 
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Arr;
@@ -10,7 +11,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\InstalledPackages;
 use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
+use KobaltDigital\PingPong\Tests\Fakes\FakeInstalledPackages;
 
 const TICK_URL = 'https://pingpong.kobaltdigital.nl/api/agent/tick';
 
@@ -121,13 +124,23 @@ it('sends a tick shaped like the schema 1 fixture', function () {
         ->dailyAt('03:00')
         ->pingpong(maxRuntime: 240, grace: 10);
 
-    Http::fake([TICK_URL => Http::response()]);
+    $this->app->instance(InstalledPackages::class, new FakeInstalledPackages(['spatie/laravel-flare' => '3.2.1']));
+    config()->set('flare.key', 'flare_test_key');
+    config()->set('flare.sender.class', 'Spatie\FlareClient\Senders\DaemonSender');
+    app(ExceptionHandler::class)->reportable(fn (Throwable $exception): ?\Spatie\FlareClient\Flare => null);
+
+    Http::fake([
+        TICK_URL => Http::response(),
+        'http://127.0.0.1:8787/health' => Http::response(['status' => 'ok']),
+        'https://ingress.flareapp.io/v1/errors' => Http::response([], 201),
+    ]);
 
     withEnv(['PM2_HOME' => '/srv/pm2'], function () {
         $this->artisan('pingpong:ping')->assertSuccessful();
     });
 
-    Http::assertSent(fn (Request $request) => $request->hasHeader('Authorization', 'Bearer pp_agent_test')
+    Http::assertSent(fn (Request $request) => $request->url() === TICK_URL
+        && $request->hasHeader('Authorization', 'Bearer pp_agent_test')
         && payloadShape(json_decode($request->body())) === payloadShape(payloadFixture('tick')));
 });
 

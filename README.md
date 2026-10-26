@@ -63,6 +63,7 @@ return [
         Signals\Memory::class,
         Signals\AppState::class,
         Signals\Pm2::class,
+        Signals\Flare::class,
     ],
 ];
 ```
@@ -92,10 +93,11 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 - **Memory.** Total and available memory, and swap in use.
 - **App.** Whether the app is in maintenance or debug mode.
 - **PM2.** Every process PM2 runs for the scheduler's user, with its status, restarts, uptime and memory. Left out when PM2 is not installed. No PM2 command runs while no daemon does, so the Agent never starts one; the list is then empty. The environment PM2 keeps per process is never sent.
+- **Flare.** Whether an exception would reach Flare: which client is installed (`spatie/laravel-flare` or `spatie/laravel-ignition`), whether it has a key, whether reporting is on and the exception handler or log stack hands exceptions to it, and whether the Flare daemon answers when the app sends through it. Once an hour, and right away after the key changes, the Agent asks Flare whether it accepts the key by posting an empty report, which Flare drops without creating an error. Only the first 8 characters of a hash of the key are sent. Left out when no Flare client is installed.
 
 These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app. A signal the server cannot provide (memory on macOS, queue backlog on Redis) is simply left out.
 
-The signals are cheap: a few syscalls, one file read, a few small queries and, on a server that runs PM2, one `pm2 jlist`. The backlog count reads at most 10000 jobs, so a large backlog does not make it slower. The database signals share one connection to the default database, opened once per tick with a 2 second connect timeout that Laravel retries once. An unreachable default database costs the tick about 4 seconds, and no canary is dispatched to a `database` queue on it. Not bounded: a `select 1` that hangs after connecting, connections other than the default, and the cache signal and overlap lock when the cache store is `database`. Collecting them costs less than booting the scheduler that runs them.
+The signals are cheap: a few syscalls, one file read, a few small queries, one `pm2 jlist` on a server that runs PM2 and, once an hour on an app with Flare, an empty report to Flare with a 3 second timeout. The backlog count reads at most 10000 jobs, so a large backlog does not make it slower. The database signals share one connection to the default database, opened once per tick with a 2 second connect timeout that Laravel retries once. An unreachable default database costs the tick about 4 seconds, and no canary is dispatched to a `database` queue on it. Not bounded: a `select 1` that hangs after connecting, connections other than the default, and the cache signal and overlap lock when the cache store is `database`. Collecting them costs less than booting the scheduler that runs them.
 
 Inside a container, load, memory and cores describe the host machine, not the container's limits.
 
