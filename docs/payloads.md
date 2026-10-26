@@ -90,6 +90,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "swap_used_bytes": 0
         },
         "app": {
+            "env": "production",
             "maintenance": false,
             "debug": false
         },
@@ -104,6 +105,20 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
                     "memory_bytes": 52428800
                 }
             ],
+            "error": null
+        },
+        "flare": {
+            "client": "spatie/laravel-flare",
+            "client_version": "3.2.1",
+            "key_set": true,
+            "key_hash": "3f1c9a0e",
+            "report": true,
+            "handler_wired": true,
+            "sender": "daemon",
+            "daemon_reachable": true,
+            "key_accepted": true,
+            "key_status": 201,
+            "key_checked_at": "2026-10-26T13:00:00+00:00",
             "error": null
         }
     },
@@ -148,7 +163,7 @@ Every signal is a raw fact measured on the sending server: bytes, seconds and co
 
 - **Checks** (`database`, `cache`, `disk`, `failed_jobs`, `queue`) are always present. A check that fails reports its own failure in the signal, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
 - **Platform facts** (`load`, `memory`, and the backlog keys of `queue`) are left out when the platform does not provide them. A missing one means unknown, never a problem. They carry no `error`.
-- **Optional checks** (`pm2`) are left out when the server lacks the tool they read, which means unknown. When it is there, they behave like a check.
+- **Optional checks** (`pm2`, `flare`) are left out when the server lacks the tool they read, which means unknown. When it is there, they behave like a check.
 
 `app` is always present. An app can also remove a signal from its `signals` config, and then that signal is missing too. A count that stops at a cap means that number or more. Inside a container, `load`, `memory` and the handshake's `cores` describe the host machine, not the container's limits.
 
@@ -267,6 +282,7 @@ Always present. The tick runs during `php artisan down` too, so `maintenance` ca
 
 | Key | Type | Meaning |
 |---|---|---|
+| `env` | string | The app's environment, `app()->environment()` (`APP_ENV`), for example `production` or `acceptance` |
 | `maintenance` | boolean | Whether the app is down for maintenance (`php artisan down`) |
 | `debug` | boolean | Whether `app.debug` (`APP_DEBUG`) is on |
 
@@ -286,6 +302,27 @@ Every process PM2 runs for the user that runs the scheduler, read with `pm2 jlis
 | `error` | string or null | Why the list could not be read: no `PM2_HOME` or `HOME`, a timeout, a failed exit or output without a JSON list |
 
 The cost is one `node` process per tick on a server that runs PM2, and a `PATH` scan and one file check on every other server.
+
+### `signals.flare`
+
+Whether an exception thrown in the app would reach [Flare](https://flareapp.io). Left out when neither `spatie/laravel-flare` nor `spatie/laravel-ignition` is installed, as Composer's runtime knows it, so a dev only install on production counts as not installed. When both are, `spatie/laravel-flare` is the one described.
+
+The facts about the app are read every tick. Flare itself is asked about the key once an hour per server, and right away when the key changes: the Agent posts an empty report to the endpoint the client reports to (`flare.base_url`, else `https://ingress.flareapp.io/v1/errors` for laravel-flare and `https://flareapp.io/api/reports` for Ignition) with the key in `x-api-token`, a 3 second timeout and no redirects. Flare answers a valid key with a 2xx and drops the empty report, so no error is created. It answers an invalid key with `403 Invalid API key`. The answer is kept in the app's cache, and between two checks every tick repeats it with the time it was given. A check that could not tell is also kept for an hour. When the cache cannot keep it, Flare is asked every tick.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `client` | string | `spatie/laravel-flare` or `spatie/laravel-ignition` |
+| `client_version` | string | Installed version of that package |
+| `key_set` | boolean | Whether `flare.key` holds a key |
+| `key_hash` | string or null | First 8 characters of the SHA-256 of the key, so PingPong can tell two Monitors that share a Flare project apart from two that do not. Never the key itself. `null` without a key |
+| `report` | boolean or null | `flare.report` of laravel-flare (`FLARE_REPORT`), true unless the app set it. `null` for Ignition, which has no such switch |
+| `handler_wired` | boolean or null | laravel-flare: whether the exception handler has the callback `Flare::handles($exceptions)` registers in `bootstrap/app.php`. Ignition: whether the default log channel, or a stack it leads to, has a channel with the `flare` driver. `null` when the handler's callbacks could not be read |
+| `sender` | string or null | laravel-flare: `daemon` when `flare.sender.class` is the daemon sender, else `direct`. `null` for Ignition |
+| `daemon_reachable` | boolean or null | Whether `GET {daemon_url}/health` answered with a 2xx within 1 second. `null` unless `sender` is `daemon`. A daemon that does not answer is not fatal: the client then sends straight to Flare |
+| `key_accepted` | boolean or null | `true` when Flare answered the last key check with a 2xx, `false` with a 401 or 403. `null` without a key or when the check could not tell |
+| `key_status` | integer or null | HTTP status of the last key check. `null` without a key or when Flare could not be reached |
+| `key_checked_at` | string or null | ISO 8601 time of the last key check. `null` without a key |
+| `error` | string or null | Why the last key check could not tell, for example a timeout or a 5xx |
 
 ## Canary
 

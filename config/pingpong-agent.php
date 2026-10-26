@@ -45,6 +45,7 @@ return [
         Signals\Memory::class,
         Signals\AppState::class,
         Signals\Pm2::class,
+        Signals\Flare::class,
     ],
 
 ];

@@ -18,10 +18,11 @@ class AppState implements Collector
         return 'app';
     }
 
-    /** @return array{maintenance: bool, debug: bool} */
+    /** @return array{env: string, maintenance: bool, debug: bool} */
     public function collect(): array
     {
         return [
+            'env' => $this->app->environment(),
             'maintenance' => $this->app->isDownForMaintenance(),
             'debug' => (bool) $this->config->get('app.debug'),
         ];
