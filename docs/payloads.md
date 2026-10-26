@@ -90,6 +90,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "swap_used_bytes": 0
         },
         "app": {
+            "env": "production",
             "maintenance": false,
             "debug": false
         },
@@ -281,6 +282,7 @@ Always present. The tick runs during `php artisan down` too, so `maintenance` ca
 
 | Key | Type | Meaning |
 |---|---|---|
+| `env` | string | The app's environment, `app()->environment()` (`APP_ENV`), for example `production` or `acceptance` |
 | `maintenance` | boolean | Whether the app is down for maintenance (`php artisan down`) |
 | `debug` | boolean | Whether `app.debug` (`APP_DEBUG`) is on |
 

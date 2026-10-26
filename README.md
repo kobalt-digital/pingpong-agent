@@ -91,7 +91,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 - **Queue.** Unless the default queue runs jobs without a worker (`sync`, `deferred`, `background`, `null`), every tick dispatches a small canary job to it. The worker that runs the canary reports it back to PingPong, so PingPong knows the workers are alive and how long a job waited. This is the only report that goes through the queue. On the `database` driver the tick also counts how many jobs wait per queue and how long the oldest due one has waited.
 - **Load.** The system load average over 1, 5 and 15 minutes.
 - **Memory.** Total and available memory, and swap in use.
-- **App.** Whether the app is in maintenance or debug mode.
+- **App.** The app's environment (`APP_ENV`), and whether it is in maintenance or debug mode.
 - **PM2.** Every process PM2 runs for the scheduler's user, with its status, restarts, uptime and memory. Left out when PM2 is not installed. No PM2 command runs while no daemon does, so the Agent never starts one; the list is then empty. The environment PM2 keeps per process is never sent.
 - **Flare.** Whether an exception would reach Flare: which client is installed (`spatie/laravel-flare` or `spatie/laravel-ignition`), whether it has a key, whether reporting is on and the exception handler or log stack hands exceptions to it, and whether the Flare daemon answers when the app sends through it. Once an hour, and right away after the key changes, the Agent asks Flare whether it accepts the key by posting an empty report, which Flare drops without creating an error. Only the first 8 characters of a hash of the key are sent. Left out when no Flare client is installed.
 

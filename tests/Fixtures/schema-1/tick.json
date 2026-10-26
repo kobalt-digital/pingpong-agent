@@ -46,6 +46,7 @@
             "swap_used_bytes": 0
         },
         "app": {
+            "env": "production",
             "maintenance": false,
             "debug": false
         },
