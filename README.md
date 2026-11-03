@@ -101,7 +101,7 @@ The signals are cheap: a few syscalls, one file read, a few small queries, one `
 
 Inside a container, load, memory and cores describe the host machine, not the container's limits.
 
-Every request carries the Agent key as a bearer token, the payload `schema` and the hostname of the sending server. Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried.
+Every request carries the Agent key as a bearer token, the payload `schema` and the hostname of the sending server. Requests time out after 5 seconds. Connecting, including DNS resolution, times out after 2 seconds. A DNS failure is retried once within the original 5 second budget, with the same payload. A timeout after connecting is not retried, since PingPong may already have received the report. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried.
 
 **Check-ins.** Every scheduled task the app defines checks in with PingPong when it starts and when it succeeds, fails or is skipped, straight from the scheduler process. PingPong learns the task's cron expression and timezone from the Check-in, so there is nothing to set up per task. A tick carries a hash of the schedule, and the full task list whenever that hash changes or PingPong asks for it again, so a task removed from the code can be archived in PingPong.
 

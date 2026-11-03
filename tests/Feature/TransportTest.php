@@ -100,6 +100,105 @@ it('swallows a connection error', function () {
     expect($delivered)->toBeFalse();
 });
 
+it('retries a DNS failure once with the same check-in payload', function (string $error) {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    $attempts = [];
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/check-in' => function (Request $request, array $options) use (&$attempts, $error) {
+        $attempts[] = ['payload' => $request->data(), 'options' => $options];
+
+        if (count($attempts) === 1) {
+            throw new ConnectionException($error);
+        }
+
+        return Http::response();
+    }]);
+
+    $delivered = app(Transport::class)->send('api/agent/check-in', [
+        'signal' => 'success',
+        'run_id' => 'same-run',
+    ]);
+
+    expect($delivered)->toBeTrue()
+        ->and($attempts)->toHaveCount(2)
+        ->and($attempts[1]['payload'])->toBe($attempts[0]['payload'])
+        ->and($attempts[0]['options']['connect_timeout'])->toBe(2)
+        ->and($attempts[1]['options']['timeout'])->toBeLessThanOrEqual(5);
+})->with([
+    'resolver timeout' => 'cURL error 28: Resolving timed out after 2001 milliseconds',
+    'host not found' => 'cURL error 6: Could not resolve host: pingpong.kobaltdigital.nl',
+]);
+
+it('stops after two failed DNS attempts without throwing', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    $attempts = 0;
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/check-in' => function () use (&$attempts) {
+        $attempts++;
+
+        throw new ConnectionException('cURL error 28: Resolving timed out');
+    }]);
+
+    expect(app(Transport::class)->send('api/agent/check-in', ['run_id' => 'same-run']))->toBeFalse()
+        ->and($attempts)->toBe(2);
+});
+
+it('does not retry a timeout after connecting because the payload may have arrived', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    $attempts = 0;
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/tick' => function () use (&$attempts) {
+        $attempts++;
+
+        throw new ConnectionException('cURL error 28: Operation timed out after 5001 milliseconds');
+    }]);
+
+    expect(app(Transport::class)->send('api/agent/tick', []))->toBeFalse()
+        ->and($attempts)->toBe(1);
+});
+
+it('subtracts time spent resolving from the retry timeout', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    $timeouts = [];
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/check-in' => function (Request $request, array $options) use (&$timeouts) {
+        $timeouts[] = $options['timeout'];
+
+        if (count($timeouts) === 1) {
+            usleep(20_000);
+
+            throw new ConnectionException('cURL error 6: Could not resolve host');
+        }
+
+        return Http::response();
+    }]);
+
+    expect(app(Transport::class)->send('api/agent/check-in', []))->toBeTrue()
+        ->and($timeouts[0])->toBe(5)
+        ->and($timeouts[1])->toBeGreaterThan(0)
+        ->and($timeouts[1])->toBeLessThan(4.99);
+});
+
+it('does not retry a DNS failure after the request budget is exhausted', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+
+    $attempts = 0;
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/check-in' => function () use (&$attempts) {
+        $attempts++;
+        usleep(5_010_000);
+
+        throw new ConnectionException('cURL error 28: Resolving timed out after 5001 milliseconds');
+    }]);
+
+    expect(app(Transport::class)->send('api/agent/check-in', []))->toBeFalse()
+        ->and($attempts)->toBe(1);
+});
+
 it('swallows a server error', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
