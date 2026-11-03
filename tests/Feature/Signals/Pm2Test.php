@@ -133,6 +133,14 @@ it('leaves out memory PM2 does not report', function () {
     expect(pm2Signal()->collect()['processes'][0]['memory_bytes'])->toBeNull();
 });
 
+it('keeps a process with malformed monitor data and reports unknown memory', function () {
+    $process = jlistProcess(0, 'queue-worker');
+    $process['monit'] = 'invalid';
+    Process::fake(['*' => Process::result(json_encode([$process]))]);
+
+    expect(pm2Signal()->collect()['processes'][0]['memory_bytes'])->toBeNull();
+});
+
 it('keeps at most a hundred processes', function () {
     Process::fake(['*' => Process::result(json_encode(array_map(fn (int $id) => jlistProcess($id, "worker-{$id}"), range(0, 120))))]);
 

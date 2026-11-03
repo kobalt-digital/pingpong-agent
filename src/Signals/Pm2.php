@@ -134,7 +134,8 @@ class Pm2 implements Collector
 
         $restarts = $env['restart_time'] ?? null;
         $startedAt = $env['pm_uptime'] ?? null;
-        $memory = $entry['monit']['memory'] ?? null;
+        $monit = $entry['monit'] ?? null;
+        $memory = is_array($monit) ? ($monit['memory'] ?? null) : null;
 
         return [
             'id' => $id,

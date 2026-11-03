@@ -6,6 +6,18 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Transport;
 
+it('reports malformed transport configuration without sending', function (string $key) {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    config()->set($key, ['invalid']);
+    Http::fake();
+    Log::spy();
+
+    expect(app(Transport::class)->send('api/agent/tick', []))->toBeFalse();
+
+    Http::assertNothingSent();
+    Log::shouldHaveReceived('warning')->once();
+})->with(['pingpong-agent.endpoint', 'pingpong-agent.key']);
+
 it('posts the payload with the bearer key, schema and server to the production endpoint by default', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 

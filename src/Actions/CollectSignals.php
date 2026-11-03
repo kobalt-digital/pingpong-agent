@@ -16,7 +16,23 @@ class CollectSignals
     {
         $signals = [];
 
-        foreach (config('pingpong-agent.signals', []) as $collectorClass) {
+        try {
+            $collectors = config()->array('pingpong-agent.signals', []);
+        } catch (Throwable $exception) {
+            Log::warning('PingPong Agent could not read the signal configuration.', [
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        foreach ($collectors as $collectorClass) {
+            if (! is_string($collectorClass) || ! is_a($collectorClass, Collector::class, true)) {
+                Log::warning('PingPong Agent ignores a signal that does not implement Collector.');
+
+                continue;
+            }
+
             $collected = $this->collect($collectorClass);
 
             if ($collected === null) {

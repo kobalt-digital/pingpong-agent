@@ -4,7 +4,35 @@ use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use KobaltDigital\PingPong\Server;
 use KobaltDigital\PingPong\Signals\FailedJobs;
+
+it('reports nonnumeric failed-job ids without changing the previous mark', function () {
+    Schema::create('malformed_failed_jobs', function (Blueprint $table) {
+        $table->string('id');
+    });
+    DB::table('malformed_failed_jobs')->insert(['id' => 'invalid']);
+    config()->set('queue.failed.driver', 'database');
+    config()->set('queue.failed.table', 'malformed_failed_jobs');
+    $markKey = 'pingpong-agent:failed-jobs-mark:'.Server::name();
+    app(Repository::class)->forever($markKey, 5);
+
+    $signal = app(FailedJobs::class)->collect();
+
+    expect($signal['new'])->toBeNull()
+        ->and($signal['error'])->toBe('The highest failed-job id must be numeric.')
+        ->and(app(Repository::class)->get($markKey))->toBe(5);
+});
+
+it('reports malformed failed-job configuration as a signal error', function (string $key) {
+    config()->set('queue.failed.driver', 'database');
+    config()->set($key, ['invalid']);
+
+    $signal = app(FailedJobs::class)->collect();
+
+    expect($signal['new'])->toBeNull()
+        ->and($signal['error'])->toBeString()->not->toBeEmpty();
+})->with(['queue.failed.driver', 'queue.failed.database', 'queue.failed.table']);
 
 it('reports no new failed jobs on the first tick, whatever is already in the table', function () {
     createFailedJobsTable();

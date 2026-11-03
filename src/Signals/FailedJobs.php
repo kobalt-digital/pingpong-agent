@@ -4,10 +4,12 @@ namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\Connection;
+use KobaltDigital\PingPong\Configuration;
 use KobaltDigital\PingPong\Contracts\Collector;
 use KobaltDigital\PingPong\DatabaseProbe;
 use KobaltDigital\PingPong\Server;
 use Throwable;
+use UnexpectedValueException;
 
 class FailedJobs implements Collector
 {
@@ -33,20 +35,20 @@ class FailedJobs implements Collector
      */
     public function collect(): array
     {
-        $driver = config('queue.failed.driver');
-
-        if (! in_array($driver, self::DATABASE_DRIVERS, true)) {
-            return $this->unknown("Failed jobs are not stored in the database (driver: {$driver}).");
-        }
-
         try {
-            $connection = $this->probe->connectionFor(config('queue.failed.database'));
+            $driver = Configuration::nullableString('queue.failed.driver');
+
+            if (! in_array($driver, self::DATABASE_DRIVERS, true)) {
+                return $this->unknown("Failed jobs are not stored in the database (driver: {$driver}).");
+            }
+
+            $connection = $this->probe->connectionFor(Configuration::nullableString('queue.failed.database'));
 
             if ($connection === null) {
                 return $this->unknown((string) $this->probe->error());
             }
 
-            return $this->countSinceLastTick($connection, config('queue.failed.table', 'failed_jobs'));
+            return $this->countSinceLastTick($connection, config()->string('queue.failed.table', 'failed_jobs'));
         } catch (Throwable $exception) {
             return $this->unknown($exception->getMessage());
         }
@@ -76,7 +78,13 @@ class FailedJobs implements Collector
 
         $mark = $this->cache->get($markKey);
 
-        $highestId = (int) $connection->table($table)->max('id');
+        $highest = $connection->table($table)->max('id');
+
+        if ($highest !== null && ! is_numeric($highest)) {
+            throw new UnexpectedValueException('The highest failed-job id must be numeric.');
+        }
+
+        $highestId = (int) $highest;
 
         $this->cache->forever($markKey, $highestId);
 

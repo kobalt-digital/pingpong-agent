@@ -59,10 +59,10 @@ class Transport
             return null;
         }
 
-        $endpoint = rtrim(config('pingpong-agent.endpoint'), '/');
-        $key = config('pingpong-agent.key');
-
         try {
+            $endpoint = rtrim(config()->string('pingpong-agent.endpoint'), '/');
+            $key = config()->string('pingpong-agent.key');
+
             $response = Http::baseUrl($endpoint)
                 ->withToken($key)
                 ->acceptJson()
