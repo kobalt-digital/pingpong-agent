@@ -71,6 +71,27 @@ it('changes its hash when the lock changes', function () {
     expect(app(Inventory::class)->hash())->not->toBe($before);
 });
 
+it('reports invalid package data as an inventory error', function (string $contents) {
+    $basePath = useComposerLock([]);
+
+    file_put_contents("{$basePath}/composer.lock", $contents);
+
+    $inventory = app(Inventory::class)->collect();
+
+    expect($inventory['packages'])->toBeNull()
+        ->and($inventory['error'])->toBeString()->not->toBeEmpty();
+})->with([
+    'scalar root' => ['42'],
+    'list root' => ['[]'],
+    'null packages' => ['{"packages": null}'],
+    'scalar packages' => ['{"packages": "invalid"}'],
+    'keyed packages' => ['{"packages": {"vendor/name": {"name": "vendor/name", "version": "1.0"}}}'],
+    'scalar entry' => ['{"packages": [42]}'],
+    'missing name' => ['{"packages": [{"version": "1.0"}]}'],
+    'invalid name' => ['{"packages": [{"name": 42, "version": "1.0"}]}'],
+    'invalid dev version' => ['{"packages-dev": [{"name": "vendor/name", "version": null}]}'],
+]);
+
 it('sends the inventory with the first tick', function () {
     useComposerLock(['laravel/framework' => 'v13.2.0']);
 

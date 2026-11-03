@@ -4,6 +4,8 @@ namespace KobaltDigital\PingPong;
 
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Str;
+use RuntimeException;
+use stdClass;
 use Throwable;
 
 /**
@@ -72,21 +74,46 @@ class Inventory
      */
     private function lockedPackages(): array
     {
-        $lock = json_decode(file_get_contents($this->lockPath()), true, flags: JSON_THROW_ON_ERROR);
+        $contents = file_get_contents($this->lockPath());
 
-        $toPackages = fn (array $entries, bool $dev) => array_map(fn (array $entry) => [
-            'name' => $entry['name'],
-            'version' => $entry['version'],
-            'dev' => $dev,
-        ], $entries);
+        if ($contents === false) {
+            throw new RuntimeException('Could not read composer.lock.');
+        }
 
-        return collect([
-            ...$toPackages($lock['packages'] ?? [], false),
-            ...$toPackages($lock['packages-dev'] ?? [], true),
-        ])
-            ->sortBy('name')
-            ->values()
-            ->all();
+        $lock = json_decode($contents, flags: JSON_THROW_ON_ERROR);
+
+        if (! $lock instanceof stdClass) {
+            throw new RuntimeException('composer.lock must contain an object.');
+        }
+
+        $packages = [
+            ...$this->packages(property_exists($lock, 'packages') ? $lock->packages : [], false),
+            ...$this->packages(property_exists($lock, 'packages-dev') ? $lock->{'packages-dev'} : [], true),
+        ];
+
+        return array_values(collect($packages)->sortBy('name')->all());
+    }
+
+    /**
+     * @return list<array{name: string, version: string, dev: bool}>
+     */
+    private function packages(mixed $entries, bool $dev): array
+    {
+        if (! is_array($entries) || ! array_is_list($entries)) {
+            throw new RuntimeException('composer.lock packages must be a list.');
+        }
+
+        $packages = [];
+
+        foreach ($entries as $entry) {
+            if (! $entry instanceof stdClass || ! is_string($entry->name ?? null) || ! is_string($entry->version ?? null)) {
+                throw new RuntimeException('composer.lock packages must have a string name and version.');
+            }
+
+            $packages[] = ['name' => $entry->name, 'version' => $entry->version, 'dev' => $dev];
+        }
+
+        return $packages;
     }
 
     private function lockPath(): string

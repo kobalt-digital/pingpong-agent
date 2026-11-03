@@ -20,14 +20,13 @@ class ScheduleManifest
      */
     public function entries(): array
     {
-        return collect($this->schedule->events())
+        return array_values(collect($this->schedule->events())
             ->map(fn ($event) => $this->tasks->find($event))
             ->filter()
             ->unique(fn (ScheduledTask $task) => $task->slug)
             ->sortBy(fn (ScheduledTask $task) => $task->slug)
             ->map(fn (ScheduledTask $task) => $task->toManifestEntry())
-            ->values()
-            ->all();
+            ->all());
     }
 
     /**
