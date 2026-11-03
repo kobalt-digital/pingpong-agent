@@ -6,6 +6,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Contracts\Collector;
 use Throwable;
+use UnexpectedValueException;
 
 class CollectSignals
 {
@@ -57,6 +58,10 @@ class CollectSignals
     {
         try {
             $collector = $this->app->make($collectorClass);
+
+            if (! $collector instanceof Collector) {
+                throw new UnexpectedValueException('The resolved signal must implement Collector.');
+            }
 
             $signal = $collector->collect();
             $name = $collector->name();

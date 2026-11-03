@@ -97,11 +97,21 @@ class DatabaseProbe
             throw new InvalidArgumentException('The default database connection must be an array.');
         }
 
+        $connection = [];
+
+        foreach ($default as $key => $value) {
+            if (! is_string($key)) {
+                throw new InvalidArgumentException('Database connection configuration keys must be strings.');
+            }
+
+            $connection[$key] = $value;
+        }
+
         if (($default['driver'] ?? null) === 'sqlite') {
             return $defaultName;
         }
 
-        $this->config->set('database.connections.'.self::CONNECTION_NAME, $this->withConnectTimeout($default));
+        $this->config->set('database.connections.'.self::CONNECTION_NAME, $this->withConnectTimeout($connection));
 
         return self::CONNECTION_NAME;
     }

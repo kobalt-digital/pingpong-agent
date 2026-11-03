@@ -16,6 +16,7 @@ it('reports malformed database configuration without connecting', function (stri
 })->with([
     'name' => ['database.default', []],
     'connection' => ['database.connections.testing', 'invalid'],
+    'numeric key' => ['database.connections.testing', [0 => 'invalid', 'driver' => 'sqlite']],
 ]);
 
 it('reports malformed network connection options', function () {
