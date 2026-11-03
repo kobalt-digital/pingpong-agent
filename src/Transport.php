@@ -3,6 +3,8 @@
 namespace KobaltDigital\PingPong;
 
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -14,6 +16,8 @@ class Transport
     public const SCHEMA = 1;
 
     public const TIMEOUT_SECONDS = 5;
+
+    private const CONNECT_TIMEOUT_SECONDS = 2;
 
     public const MAX_REDIRECTS = 3;
 
@@ -61,12 +65,15 @@ class Transport
 
         $endpoint = rtrim(config('pingpong-agent.endpoint'), '/');
         $key = config('pingpong-agent.key');
+        $startedAt = hrtime(true);
 
         try {
             $response = Http::baseUrl($endpoint)
                 ->withToken($key)
                 ->acceptJson()
                 ->timeout(self::TIMEOUT_SECONDS)
+                ->connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+                ->retry(2, 0, fn (Throwable $exception, PendingRequest $request): bool => $this->retryDnsFailure($exception, $request, $startedAt), throw: false)
                 ->withOptions(['allow_redirects' => [
                     'max' => self::MAX_REDIRECTS,
                     'strict' => true,
@@ -89,6 +96,29 @@ class Transport
         $this->warnWhenRedirected($path, $response);
 
         return $this->wasDelivered($path, $response) ? $response : null;
+    }
+
+    /** Retry resolver failures once within the original request budget. */
+    private function retryDnsFailure(Throwable $exception, PendingRequest $request, int $startedAt): bool
+    {
+        if (! $exception instanceof ConnectionException) {
+            return false;
+        }
+
+        if (! str_contains($exception->getMessage(), 'cURL error 6:') && ! str_contains($exception->getMessage(), 'Resolving timed out')) {
+            return false;
+        }
+
+        $remainingSeconds = self::TIMEOUT_SECONDS - (hrtime(true) - $startedAt) / 1_000_000_000;
+
+        if ($remainingSeconds <= 0) {
+            return false;
+        }
+
+        $request->timeout($remainingSeconds)
+            ->connectTimeout(min(self::CONNECT_TIMEOUT_SECONDS, $remainingSeconds));
+
+        return true;
     }
 
     /**
