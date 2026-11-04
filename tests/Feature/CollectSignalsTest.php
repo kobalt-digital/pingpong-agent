@@ -24,6 +24,16 @@ it('skips invalid collector entries while keeping valid signals', function () {
     Log::shouldHaveReceived('warning')->times(3);
 });
 
+it('reports an invalid container binding without losing other signals', function () {
+    config()->set('pingpong-agent.signals', [AlwaysOne::class, AlwaysNull::class]);
+    app()->bind(AlwaysNull::class, fn () => new stdClass);
+    Log::spy();
+
+    expect(app(CollectSignals::class)->execute())->toBe(['one' => ['value' => 1]]);
+
+    Log::shouldHaveReceived('warning')->once();
+});
+
 class AlwaysOne implements Collector
 {
     public function name(): string

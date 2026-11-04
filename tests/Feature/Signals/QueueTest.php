@@ -1,10 +1,39 @@
 <?php
 
+use Illuminate\Database\Connection;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use KobaltDigital\PingPong\DatabaseProbe;
 use KobaltDigital\PingPong\Signals\Queue;
+
+it('keeps the canary and omits malformed backlog rows', function (array $row) {
+    useDatabaseQueue();
+    $builder = Mockery::mock(Builder::class);
+    $builder->shouldReceive('useWritePdo', 'fromSub', 'selectRaw', 'groupBy', 'orderBy')->andReturnSelf();
+    $builder->shouldReceive('get')->once()->andReturn(collect([(object) $row]));
+    $connection = Mockery::mock(Connection::class);
+    $connection->shouldReceive('table')->with('jobs')->andReturn(DB::table('jobs'));
+    $connection->shouldReceive('query')->andReturn($builder);
+    $probe = Mockery::mock(DatabaseProbe::class);
+    $probe->shouldReceive('connectionFor')->with(null)->andReturn($connection);
+    app()->instance(DatabaseProbe::class, $probe);
+    Log::spy();
+
+    $signal = app(Queue::class)->collect();
+
+    expect($signal['canary_id'])->toBeString()
+        ->and($signal['error'])->toBeNull()
+        ->and($signal)->not->toHaveKey('pending');
+
+    Log::shouldHaveReceived('warning')->once();
+})->with([
+    'queue' => [['queue' => null, 'pending' => 1, 'oldest_due_at' => null]],
+    'count' => [['queue' => 'default', 'pending' => 'invalid', 'oldest_due_at' => null]],
+    'timestamp' => [['queue' => 'default', 'pending' => 1, 'oldest_due_at' => 'invalid']],
+]);
 
 it('reports malformed queue configuration as a signal error', function (string $key) {
     config()->set('queue.default', 'database');

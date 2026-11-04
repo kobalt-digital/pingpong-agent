@@ -14,6 +14,7 @@ use KobaltDigital\PingPong\Jobs\ReportQueueCanary;
 use KobaltDigital\PingPong\Server;
 use stdClass;
 use Throwable;
+use UnexpectedValueException;
 
 class Queue implements Collector
 {
@@ -178,10 +179,18 @@ class Queue implements Collector
         $oldestDueAt = null;
 
         foreach ($rows as $row) {
+            if (! is_string($row->queue) || ! is_numeric($row->pending)) {
+                throw new UnexpectedValueException('Queue backlog rows must have a string queue and numeric pending count.');
+            }
+
             $pending[$row->queue] = (int) $row->pending;
 
             if ($row->oldest_due_at === null) {
                 continue;
+            }
+
+            if (! is_numeric($row->oldest_due_at)) {
+                throw new UnexpectedValueException('Queue backlog timestamps must be numeric or null.');
             }
 
             $oldestDueAt = $oldestDueAt === null
