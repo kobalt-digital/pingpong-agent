@@ -4,6 +4,7 @@ namespace KobaltDigital\PingPong;
 
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Events\Dispatcher;
 use KobaltDigital\PingPong\Actions\SendHandshake;
 use KobaltDigital\PingPong\Commands\PingCommand;
 use KobaltDigital\PingPong\Scheduling\ReportScheduledTasks;
@@ -41,7 +42,7 @@ class PingPongServiceProvider extends PackageServiceProvider
 
     public function packageBooted(): void
     {
-        $this->app['events']->subscribe(ReportScheduledTasks::class);
+        $this->app->make(Dispatcher::class)->subscribe(ReportScheduledTasks::class);
 
         Event::macro('pingpong', function (?int $maxRuntime = null, ?int $grace = null) {
             app(TaskOverrides::class)->set($this, $maxRuntime, $grace);
