@@ -6,6 +6,17 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use KobaltDigital\PingPong\Signals\Queue;
 
+it('reports malformed queue configuration as a signal error', function (string $key) {
+    config()->set('queue.default', 'database');
+    config()->set('queue.connections.database.driver', 'database');
+    config()->set($key, ['invalid']);
+
+    $signal = app(Queue::class)->collect();
+
+    expect($signal['error'])->toBeString()->not->toBeEmpty()
+        ->and($signal['canary_id'])->toBeNull();
+})->with(['queue.default', 'queue.connections.database.driver', 'queue.connections.database.connection', 'queue.connections.database.table']);
+
 beforeEach(function () {
     Carbon::setTestNow('2026-09-29 12:00:00');
 });

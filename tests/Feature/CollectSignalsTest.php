@@ -6,6 +6,24 @@ use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Actions\CollectSignals;
 use KobaltDigital\PingPong\Contracts\Collector;
 
+it('reports invalid signal configuration without breaking the tick', function () {
+    config()->set('pingpong-agent.signals', 'invalid');
+    Log::spy();
+
+    expect(app(CollectSignals::class)->execute())->toBe([]);
+
+    Log::shouldHaveReceived('warning')->once();
+});
+
+it('skips invalid collector entries while keeping valid signals', function () {
+    config()->set('pingpong-agent.signals', [42, stdClass::class, 'MissingCollector', AlwaysOne::class]);
+    Log::spy();
+
+    expect(app(CollectSignals::class)->execute())->toBe(['one' => ['value' => 1]]);
+
+    Log::shouldHaveReceived('warning')->times(3);
+});
+
 class AlwaysOne implements Collector
 {
     public function name(): string

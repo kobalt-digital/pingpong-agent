@@ -3,6 +3,7 @@
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Scheduling\ScheduledTasks;
 
 const MANIFEST_TICK_URL = 'https://pingpong.kobaltdigital.nl/api/agent/tick';
@@ -25,6 +26,16 @@ it('ignores task names containing invalid utf8', function () {
     $event = app(Schedule::class)->call(fn () => null)->name("broken\xFF");
 
     expect(app(ScheduledTasks::class)->find($event))->toBeNull();
+});
+
+it('reports an invalid default timezone without breaking the manifest', function () {
+    $event = app(Schedule::class)->exec('backup')->timezone(null);
+    config()->set('app.timezone', ['invalid']);
+    Log::spy();
+
+    expect(app(ScheduledTasks::class)->find($event))->toBeNull();
+
+    Log::shouldHaveReceived('warning')->once();
 });
 
 /**

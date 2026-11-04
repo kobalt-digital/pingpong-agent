@@ -6,7 +6,9 @@ use DateTimeZone;
 use Illuminate\Console\Application;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 class ScheduledTasks
 {
@@ -41,12 +43,22 @@ class ScheduledTasks
 
         $overrides = $this->overrides->for($event);
 
+        try {
+            $timezone = $this->timezone($event);
+        } catch (Throwable $exception) {
+            Log::warning('PingPong Agent could not read a scheduled task timezone.', [
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
         return new ScheduledTask(
             slug: $slug,
             command: $command,
             description: $event->description,
             cron: $event->expression,
-            timezone: $this->timezone($event),
+            timezone: $timezone,
             maxRuntime: $overrides['max_runtime'],
             grace: $overrides['grace'],
         );
@@ -99,7 +111,7 @@ class ScheduledTasks
 
     private function timezone(Event $event): string
     {
-        $timezone = blank($event->timezone) ? config('app.timezone') : $event->timezone;
+        $timezone = blank($event->timezone) ? config()->string('app.timezone') : $event->timezone;
 
         return $timezone instanceof DateTimeZone ? $timezone->getName() : $timezone;
     }

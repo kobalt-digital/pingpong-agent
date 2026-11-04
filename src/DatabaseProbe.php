@@ -5,6 +5,7 @@ namespace KobaltDigital\PingPong;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
+use InvalidArgumentException;
 use PDO;
 use Throwable;
 
@@ -85,7 +86,16 @@ class DatabaseProbe
     private function register(): string
     {
         $defaultName = $this->config->get('database.default');
+
+        if (! is_string($defaultName)) {
+            throw new InvalidArgumentException('The default database connection name must be a string.');
+        }
+
         $default = $this->config->get("database.connections.{$defaultName}");
+
+        if (! is_array($default)) {
+            throw new InvalidArgumentException('The default database connection must be an array.');
+        }
 
         if (($default['driver'] ?? null) === 'sqlite') {
             return $defaultName;
@@ -109,7 +119,13 @@ class DatabaseProbe
         }
 
         // pdo_mysql and pdo_pgsql both use this as their connect timeout.
-        $connection['options'] ??= [];
+        $options = $connection['options'] ?? [];
+
+        if (! is_array($options)) {
+            throw new InvalidArgumentException('Database connection options must be an array.');
+        }
+
+        $connection['options'] = $options;
         $connection['options'][PDO::ATTR_TIMEOUT] = self::CONNECT_TIMEOUT_SECONDS;
 
         return $connection;

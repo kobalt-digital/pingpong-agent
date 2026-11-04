@@ -7,6 +7,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use KobaltDigital\PingPong\Configuration;
 use KobaltDigital\PingPong\Contracts\Collector;
 use KobaltDigital\PingPong\DatabaseProbe;
 use KobaltDigital\PingPong\Jobs\ReportQueueCanary;
@@ -56,15 +57,34 @@ class Queue implements Collector
      */
     public function collect(): array
     {
-        $connection = config('queue.default');
-        $driver = config("queue.connections.{$connection}.driver");
+        try {
+            $connection = Configuration::nullableString('queue.default');
+            $driver = Configuration::nullableString("queue.connections.{$connection}.driver");
 
+            return $this->collectQueue($connection, $driver);
+        } catch (Throwable $exception) {
+            return $this->fact(error: $this->error($exception->getMessage()), connection: null, driver: null);
+        }
+    }
+
+    /**
+     * @return array{
+     *     connection: ?string,
+     *     driver: ?string,
+     *     canary_id: ?string,
+     *     error: ?string,
+     *     pending?: array<string, int>|stdClass,
+     *     oldest_pending_seconds?: int
+     * }
+     */
+    private function collectQueue(?string $connection, ?string $driver): array
+    {
         if ($driver !== 'database') {
             return $this->canary($connection, $driver);
         }
 
         try {
-            $database = $this->probe->connectionFor(config("queue.connections.{$connection}.connection"));
+            $database = $this->probe->connectionFor(Configuration::nullableString("queue.connections.{$connection}.connection"));
         } catch (Throwable $exception) {
             return $this->fact($connection, $driver, error: $this->error($exception->getMessage()));
         }
@@ -75,7 +95,7 @@ class Queue implements Collector
             return $this->fact($connection, $driver, error: $this->error((string) $this->probe->error()));
         }
 
-        $backlog = $this->backlog($database, config("queue.connections.{$connection}.table", 'jobs'));
+        $backlog = $this->backlog($database, config()->string("queue.connections.{$connection}.table", 'jobs'));
 
         return [...$this->canary($connection, $driver), ...$backlog];
     }

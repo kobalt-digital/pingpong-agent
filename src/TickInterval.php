@@ -33,7 +33,9 @@ class TickInterval
         $minutes = filter_var($configured, FILTER_VALIDATE_INT);
 
         if ($minutes === false || $minutes < 1 || 60 % $minutes !== 0) {
-            Log::warning("PingPong Agent ignores tick_minutes {$configured}; it must divide 60. Ticking every minute.");
+            Log::warning('PingPong Agent ignores tick_minutes; it must divide 60. Ticking every minute.', [
+                'configured' => $configured,
+            ]);
 
             return self::DEFAULT_MINUTES;
         }

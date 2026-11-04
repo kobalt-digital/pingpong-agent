@@ -1,7 +1,36 @@
 <?php
 
+use Illuminate\Config\Repository;
 use Illuminate\Database\MySqlConnection;
 use KobaltDigital\PingPong\DatabaseProbe;
+
+it('reports malformed database configuration without connecting', function (string $key, mixed $value) {
+    $configuration = new Repository(config()->all());
+    $configuration->set($key, $value);
+
+    $probe = new DatabaseProbe(app('db'), $configuration);
+
+    expect($probe->connection())->toBeNull()
+        ->and($probe->error())->toBeString()->not->toBeEmpty()
+        ->and($probe->connection())->toBeNull();
+})->with([
+    'name' => ['database.default', []],
+    'connection' => ['database.connections.testing', 'invalid'],
+]);
+
+it('reports malformed network connection options', function () {
+    $configuration = new Repository([
+        'database' => [
+            'default' => 'mysql',
+            'connections' => ['mysql' => ['driver' => 'mysql', 'options' => 'invalid']],
+        ],
+    ]);
+
+    $probe = new DatabaseProbe(app('db'), $configuration);
+
+    expect($probe->connection())->toBeNull()
+        ->and($probe->error())->toBe('Database connection options must be an array.');
+});
 
 /**
  * Stands in for a networked default connection: counts every connect and
