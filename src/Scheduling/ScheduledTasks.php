@@ -29,7 +29,9 @@ class ScheduledTasks
             return null;
         }
 
-        $command = $event instanceof CallbackEvent ? null : $this->withoutBinaries($event->command);
+        $command = $event instanceof CallbackEvent || $event->command === null
+            ? null
+            : $this->withoutBinaries($event->command);
 
         $slug = $this->slug($command ?? $event->description);
 
@@ -62,11 +64,17 @@ class ScheduledTasks
      */
     private function slug(?string $name): ?string
     {
-        if (blank($name)) {
+        if ($name === null || blank($name)) {
             return null;
         }
 
-        $slug = Str::slug(preg_replace('/[^\pL\pN]+/u', ' ', $name));
+        $normalized = preg_replace('/[^\pL\pN]+/u', ' ', $name);
+
+        if ($normalized === null) {
+            return null;
+        }
+
+        $slug = Str::slug($normalized);
 
         if (strlen($slug) <= self::SLUG_MAX_LENGTH) {
             return $slug;

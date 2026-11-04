@@ -3,11 +3,28 @@
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use KobaltDigital\PingPong\Scheduling\ScheduledTasks;
 
 const MANIFEST_TICK_URL = 'https://pingpong.kobaltdigital.nl/api/agent/tick';
 
 beforeEach(function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
+});
+
+it('uses the description for an event without a command', function () {
+    $event = app(Schedule::class)->exec('placeholder')->description('Named task');
+    $event->command = null;
+
+    $task = app(ScheduledTasks::class)->find($event);
+
+    expect($task->slug)->toBe('named-task')
+        ->and($task->command)->toBeNull();
+});
+
+it('ignores task names containing invalid utf8', function () {
+    $event = app(Schedule::class)->call(fn () => null)->name("broken\xFF");
+
+    expect(app(ScheduledTasks::class)->find($event))->toBeNull();
 });
 
 /**
