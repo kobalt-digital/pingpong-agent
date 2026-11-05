@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update:
@@ -24,9 +25,11 @@ jobs:
           latest-version: ${{ github.event.release.name }}
           release-notes: ${{ github.event.release.body }}
 
-      - name: Commit updated CHANGELOG
-        uses: stefanzweifel/git-auto-commit-action@v7
+      - name: Open changelog pull request
+        uses: peter-evans/create-pull-request@v8
         with:
-          branch: main
-          commit_message: Update CHANGELOG
-          file_pattern: CHANGELOG.md
+          branch: chore/update-changelog
+          commit-message: Update CHANGELOG
+          add-paths: CHANGELOG.md
+          title: 'docs: update changelog'
+          body: Update CHANGELOG.md with the published release notes.
