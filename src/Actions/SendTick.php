@@ -4,6 +4,7 @@ namespace KobaltDigital\PingPong\Actions;
 
 use Illuminate\Http\Client\Response;
 use KobaltDigital\PingPong\DeliveredHashes;
+use KobaltDigital\PingPong\Delivery\Connectivity;
 use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
 use KobaltDigital\PingPong\TickInterval;
@@ -20,6 +21,7 @@ class SendTick
         private Inventory $inventory,
         private DeliveredHashes $deliveredHashes,
         private TickInterval $tickInterval,
+        private Connectivity $connectivity,
     ) {}
 
     public function execute(): bool
@@ -51,10 +53,20 @@ class SendTick
             $payload['inventory'] = $this->inventory->collect();
         }
 
+        $connectivity = $this->connectivity->report();
+
+        if ($connectivity !== null) {
+            $payload['connectivity'] = $connectivity;
+        }
+
         $response = $this->transport->deliver('api/agent/tick', $payload);
 
         if ($response === null) {
             return false;
+        }
+
+        if ($connectivity !== null) {
+            $this->connectivity->clear($connectivity);
         }
 
         if ($scheduleIsNew) {

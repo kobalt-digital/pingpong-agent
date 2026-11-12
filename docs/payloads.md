@@ -146,6 +146,13 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             }
         ],
         "error": null
+    },
+    "connectivity": {
+        "unreachable_since": "2026-11-12T09:42:07Z",
+        "unreachable_until": "2026-11-12T09:59:21Z",
+        "failed_attempts": 31,
+        "last_error": "dns",
+        "last_error_message": "cURL error 28: Resolving timed out after 5000 milliseconds"
     }
 }
 ```
@@ -158,6 +165,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `signals` | object | Health signals keyed by name, always a JSON object |
 | `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
 | `inventory` | object, optional | What the app runs on. Only present when `inventory_hash` differs from the last tick PingPong accepted from this `server` |
+| `connectivity` | object, optional | How long this `server` could not reach PingPong, and why. Only present in the first tick delivered after a request failed |
 
 Every signal is a raw fact measured on the sending server: bytes, seconds and counts, never percentages. The Agent never decides whether a value is bad; PingPong owns the thresholds. Signals follow one of three conventions:
 
@@ -195,6 +203,20 @@ Read from the `composer.lock` in the app's base path, so it lists what the lock 
 | `packages[].version` | string | Version as the lock has it, e.g. `v13.2.0` or `dev-main` |
 | `packages[].dev` | boolean | Whether the package is in `packages-dev` |
 | `error` | string or null | Why the packages could not be read |
+
+### `connectivity`
+
+Every request that does not reach PingPong, to any endpoint and from any process (scheduler, tick, queue worker, web), counts: a network error, a timeout, a `5xx` and a `429`. A `4xx` PingPong answered does not, since PingPong was reachable. The Agent keeps the count in `storage/framework/pingpong-agent/<server>/connectivity.json`, one file per server, and the first tick that gets through carries it. It is forgotten once PingPong accepted that tick; when that tick fails as well, the count goes on and the next tick carries it. A request that fails while that tick is underway starts the next gap.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `unreachable_since` | string | First failed request of the gap, ISO 8601 in UTC, by the clock of `server` |
+| `unreachable_until` | string | Last failed request of the gap, same format. Never before `unreachable_since`, even when the clock was set back |
+| `failed_attempts` | integer | Requests that did not reach PingPong during the gap |
+| `last_error` | string | Why the last one failed: `dns`, `connect`, `timeout`, `tls`, `http_5xx`, `rate_limited` or `other` |
+| `last_error_message` | string | The error of the last one, at most 255 characters |
+
+`last_error` comes from the cURL error: number 6, or a resolve that timed out, is `dns`; 7 is `connect`; any other 28 is `timeout`; 35, 51, 58 and 60 are `tls`. A `5xx` answer is `http_5xx` and a `429` is `rate_limited`.
 
 ### `signals.database`
 
@@ -450,7 +472,7 @@ Two tasks with the same command and arguments share a slug, and so a task in Pin
 
 ## Responses
 
-Any `2xx` counts as delivered. A `429` skips this request without a retry. Anything else, including a timeout after 5 seconds, is logged as a warning and dropped.
+Any `2xx` counts as delivered. A `429` skips this request without a retry. Anything else, including a timeout after 5 seconds, is logged as a warning and dropped. Every request that did not reach PingPong (anything but a `2xx` or a `4xx` other than `429`) counts towards the next tick's [`connectivity`](#connectivity).
 
 The Agent reads one thing from a delivered tick's body. When PingPong lacks a list this server marked delivered (for instance because the app ticked before PingPong read it), it answers:
 

@@ -102,5 +102,12 @@
             }
         ],
         "error": null
+    },
+    "connectivity": {
+        "unreachable_since": "2026-11-12T09:42:07Z",
+        "unreachable_until": "2026-11-12T09:59:21Z",
+        "failed_attempts": 31,
+        "last_error": "dns",
+        "last_error_message": "cURL error 28: Resolving timed out after 5000 milliseconds"
     }
 }

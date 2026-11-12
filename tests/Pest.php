@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use KobaltDigital\PingPong\Tests\TestCase;
@@ -149,4 +150,20 @@ function writeComposerLock(string $basePath, array $packages, array $devPackages
         'packages' => $toLockEntries($packages),
         'packages-dev' => $toLockEntries($devPackages),
     ]));
+}
+
+/**
+ * Points storage at a regular file inside the test's storage directory, so
+ * no directory can be created under it on any platform, and it is removed
+ * with that directory.
+ */
+function useUnwritableStorage(): void
+{
+    File::ensureDirectoryExists(storage_path());
+
+    $file = storage_path('not-a-directory');
+
+    touch($file);
+
+    app()->useStoragePath($file);
 }

@@ -2,8 +2,10 @@
 
 namespace KobaltDigital\PingPong\Tests;
 
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\InstalledPackages;
 use KobaltDigital\PingPong\PingPongServiceProvider;
@@ -22,6 +24,21 @@ class TestCase extends Orchestra
 
         $this->app->instance(Host::class, new FakeHost);
         $this->app->instance(InstalledPackages::class, new FakeInstalledPackages);
+
+        $this->useTemporaryStorage();
+    }
+
+    /**
+     * The outbox and connectivity state live on disk, so every test starts
+     * with a storage directory of its own.
+     */
+    private function useTemporaryStorage(): void
+    {
+        $storagePath = sys_get_temp_dir().'/pingpong-agent-storage-'.Str::random(8);
+
+        $this->app->useStoragePath($storagePath);
+
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($storagePath));
     }
 
     protected function getPackageProviders($app): array

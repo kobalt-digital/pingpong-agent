@@ -6,6 +6,10 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use KobaltDigital\PingPong\Delivery\Attempt;
+use KobaltDigital\PingPong\Delivery\Connectivity;
+use KobaltDigital\PingPong\Delivery\Failure;
+use KobaltDigital\PingPong\Delivery\Outcome;
 use Psr\Http\Message\RequestInterface;
 use Throwable;
 
@@ -17,7 +21,10 @@ class Transport
 
     public const MAX_REDIRECTS = 3;
 
-    public function __construct(private Application $app) {}
+    public function __construct(
+        private Application $app,
+        private Connectivity $connectivity,
+    ) {}
 
     /**
      * The one place that decides whether the Agent talks to PingPong at all:
@@ -55,8 +62,21 @@ class Transport
      */
     public function deliver(string $path, array $payload): ?Response
     {
+        return $this->attempt($path, $payload)->response;
+    }
+
+    /**
+     * Like send, but tells a request that may land later (PingPong out of
+     * reach, failing or rate limiting) from one it refused. Every request
+     * that does not reach PingPong counts towards the next tick's
+     * connectivity report.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function attempt(string $path, array $payload): Attempt
+    {
         if (! $this->shouldSend()) {
-            return null;
+            return new Attempt(Outcome::SKIPPED);
         }
 
         try {
@@ -83,12 +103,12 @@ class Transport
                 'exception' => $exception->getMessage(),
             ]);
 
-            return null;
+            return $this->undelivered(Failure::fromException($exception));
         }
 
         $this->warnWhenRedirected($path, $response);
 
-        return $this->wasDelivered($path, $response) ? $response : null;
+        return $this->judge($path, $response);
     }
 
     /**
@@ -130,14 +150,22 @@ class Transport
         ]);
     }
 
-    private function wasDelivered(string $path, Response $response): bool
+    private function judge(string $path, Response $response): Attempt
     {
         if ($response->status() === 429) {
             Log::info("PingPong Agent was rate limited at {$path}, skipping.", [
                 'retry_after' => $response->header('Retry-After'),
             ]);
 
-            return false;
+            return $this->undelivered(Failure::fromResponse($response));
+        }
+
+        if ($response->serverError()) {
+            Log::warning("PingPong failed to handle the Agent at {$path}.", [
+                'status' => $response->status(),
+            ]);
+
+            return $this->undelivered(Failure::fromResponse($response));
         }
 
         if ($response->failed()) {
@@ -145,9 +173,25 @@ class Transport
                 'status' => $response->status(),
             ]);
 
-            return false;
+            return new Attempt(Outcome::REJECTED);
         }
 
-        return true;
+        return new Attempt(Outcome::DELIVERED, $response);
+    }
+
+    /**
+     * An exception from outside the HTTP client, such as a malformed
+     * configuration, says nothing about PingPong and will not pass on a
+     * second try either.
+     */
+    private function undelivered(?Failure $failure): Attempt
+    {
+        if ($failure === null) {
+            return new Attempt(Outcome::REJECTED);
+        }
+
+        $this->connectivity->recordFailure($failure);
+
+        return new Attempt(Outcome::UNDELIVERED);
     }
 }
