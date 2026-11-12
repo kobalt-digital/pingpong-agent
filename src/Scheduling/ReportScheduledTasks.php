@@ -10,6 +10,7 @@ use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Console\Events\ScheduledTaskStarting;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use KobaltDigital\PingPong\Server;
@@ -26,6 +27,8 @@ class ReportScheduledTasks
     public const MESSAGE_MAX_LENGTH = 255;
 
     public const BACKGROUND_RUN_ID_SECONDS = 86400;
+
+    public const TIME_FORMAT = 'Y-m-d\TH:i:s.vp';
 
     /** @var WeakMap<Event, string> */
     private WeakMap $runIds;
@@ -143,6 +146,8 @@ class ReportScheduledTasks
 
     private function checkIn(Event $event, CheckInSignal $signal, ?string $message = null): void
     {
+        $occurredAt = Date::now()->utc()->format(self::TIME_FORMAT);
+
         $task = $this->tasks->find($event);
 
         if ($task === null) {
@@ -163,6 +168,7 @@ class ReportScheduledTasks
             ],
             'exit_code' => $signal === CheckInSignal::FAIL ? $event->exitCode : null,
             'message' => $message === null ? null : Str::limit($message, self::MESSAGE_MAX_LENGTH - 3),
+            'occurred_at' => $occurredAt,
         ]);
     }
 

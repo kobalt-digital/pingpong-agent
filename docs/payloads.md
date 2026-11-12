@@ -366,7 +366,8 @@ The facts about the app are read every tick. Flare itself is asked about the key
         "grace": 10
     },
     "exit_code": null,
-    "message": null
+    "message": null,
+    "occurred_at": "2026-11-12T09:42:07.250Z"
 }
 ```
 
@@ -386,7 +387,8 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
         "grace": 10
     },
     "exit_code": 2,
-    "message": "Scheduled command [backup:run --only-db] failed with exit code [2]."
+    "message": "Scheduled command [backup:run --only-db] failed with exit code [2].",
+    "occurred_at": "2026-11-12T09:43:01.500Z"
 }
 ```
 
@@ -394,7 +396,7 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 |---|---|---|
 | `slug` | string | Identifies the task, stable across deploys. At most 100 characters |
 | `signal` | string | `start`, `success`, `fail` or `skipped` |
-| `run_id` | string | UUID shared by the `start` of a run and the `success`, `fail` or `skipped` that ends it |
+| `run_id` | string | UUID shared by the `start` of a run and the `success`, `fail` or `skipped` that ends it. With `signal` it identifies a Check-in, so PingPong treats a second one with the same `run_id` and `signal` as a duplicate |
 | `cron` | string | The task's cron expression |
 | `timezone` | string | The task's timezone (`->timezone()`), else the app's `app.timezone` |
 | `overrides` | object | What the task sets in code with `->pingpong()`, see below. Always both keys |
@@ -402,6 +404,7 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 | `overrides.grace` | integer or null | Minutes a start may be late. `null` leaves it to PingPong |
 | `exit_code` | integer or null | Exit code of a `fail`. `1` for a closure that threw. `null` for every other signal |
 | `message` | string or null | Exception message of a `fail`, at most 255 characters |
+| `occurred_at` | string | When the scheduler event behind the signal fired, ISO 8601 in UTC with milliseconds, by the clock of `server`. Taken when it happens, not when it is sent |
 
 ### Signals
 
