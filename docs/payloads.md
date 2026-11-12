@@ -122,6 +122,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
             "error": null
         }
     },
+    "outbox_pending": 0,
     "tasks": [
         {
             "slug": "backup-run-only-db",
@@ -163,6 +164,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `schedule_hash` | string | SHA-256 of the task list below, whether or not the list is sent |
 | `inventory_hash` | string | SHA-256 over the PHP version, the Laravel version and the bytes of `composer.lock`, whether or not the inventory is sent |
 | `signals` | object | Health signals keyed by name, always a JSON object |
+| `outbox_pending` | integer | Check-ins waiting in this `server`'s [outbox](#outbox) when the tick was built, so before this tick replays any. Always present, `0` when the outbox is empty or cannot be read. While it is above `0`, more replays follow in the next ticks |
 | `tasks` | array, optional | The app's scheduled tasks. Only present when `schedule_hash` differs from the last tick PingPong accepted from this `server` |
 | `inventory` | object, optional | What the app runs on. Only present when `inventory_hash` differs from the last tick PingPong accepted from this `server` |
 | `connectivity` | object, optional | How long this `server` could not reach PingPong, and why. Only present in the first tick delivered after a request failed |
@@ -444,6 +446,16 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 
 A background task ends in another process than it started in, so its `run_id` is kept in the app's cache for a day, per server, between the two.
 
+### Outbox
+
+A Check-in that does not reach PingPong (a network error, a timeout, a `5xx` or a `429`) is kept in `storage/framework/pingpong-agent/<server>/outbox.json`, one file per server. A Check-in PingPong answers with any other `4xx` is dropped, since sending it again changes nothing. Right after the next tick PingPong accepts, the Agent replays the kept Check-ins oldest first, exactly as they were first sent: same `run_id`, same `occurred_at`. It stops at the first one that does not get through, and replays at most 50 per tick. It starts no new replay once 10 seconds have passed, so with the 5 second request timeout a tick spends at most about 15 seconds on it. The rest waits for the next tick. A replayed Check-in PingPong rejects is dropped.
+
+Every tick says in `outbox_pending` how many Check-ins wait, counted before that tick's replay, so PingPong knows more are coming while it is above `0`. A delivered tick reporting `0` means nothing is left to replay. An outbox that cannot be read (a corrupt file, or one the tick's user may not read) counts as `0`, so a broken file never holds PingPong's flush window open.
+
+The outbox holds at most 500 Check-ins and none older than 24 hours. Beyond that the oldest are dropped, with one warning in the log until the outbox has emptied again.
+
+Replays can arrive after newer Check-ins: once PingPong is reachable again, new Check-ins go out directly while older ones still wait their turn in the outbox, possibly for several ticks. So `occurred_at`, not arrival, says when a signal happened. PingPong treats a Check-in with a `run_id` and `signal` it already has as a duplicate. Only Check-ins are kept: ticks, canaries and handshakes are not replayed.
+
 ### Overrides
 
 A task sets them where it is scheduled:
@@ -472,7 +484,7 @@ Two tasks with the same command and arguments share a slug, and so a task in Pin
 
 ## Responses
 
-Any `2xx` counts as delivered. A `429` skips this request without a retry. Anything else, including a timeout after 5 seconds, is logged as a warning and dropped. Every request that did not reach PingPong (anything but a `2xx` or a `4xx` other than `429`) counts towards the next tick's [`connectivity`](#connectivity).
+Any `2xx` counts as delivered. A `429` skips this request without a retry. Anything else, including a timeout after 5 seconds, is logged as a warning and dropped, except a Check-in that did not reach PingPong, which waits in the [outbox](#outbox). Every request that did not reach PingPong (anything but a `2xx` or a `4xx` other than `429`) counts towards the next tick's [`connectivity`](#connectivity).
 
 The Agent reads one thing from a delivered tick's body. When PingPong lacks a list this server marked delivered (for instance because the app ticked before PingPong read it), it answers:
 

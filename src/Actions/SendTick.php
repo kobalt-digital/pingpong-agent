@@ -5,6 +5,7 @@ namespace KobaltDigital\PingPong\Actions;
 use Illuminate\Http\Client\Response;
 use KobaltDigital\PingPong\DeliveredHashes;
 use KobaltDigital\PingPong\Delivery\Connectivity;
+use KobaltDigital\PingPong\Delivery\Outbox;
 use KobaltDigital\PingPong\Inventory;
 use KobaltDigital\PingPong\Scheduling\ScheduleManifest;
 use KobaltDigital\PingPong\TickInterval;
@@ -22,6 +23,8 @@ class SendTick
         private DeliveredHashes $deliveredHashes,
         private TickInterval $tickInterval,
         private Connectivity $connectivity,
+        private FlushOutbox $flushOutbox,
+        private Outbox $outbox,
     ) {}
 
     public function execute(): bool
@@ -43,6 +46,7 @@ class SendTick
             'schedule_hash' => $scheduleHash,
             'inventory_hash' => $inventoryHash,
             'signals' => $signals === [] ? new stdClass : $signals,
+            'outbox_pending' => $this->outbox->pending(),
         ];
 
         if ($scheduleIsNew) {
@@ -84,6 +88,8 @@ class SendTick
         if ($this->asksFor($response, 'send_inventory')) {
             $this->deliveredHashes->forget('inventory');
         }
+
+        $this->flushOutbox->execute();
 
         return true;
     }

@@ -10,4 +10,9 @@ readonly class Attempt
         public Outcome $outcome,
         public ?Response $response = null,
     ) {}
+
+    public function undelivered(): bool
+    {
+        return $this->outcome === Outcome::UNDELIVERED;
+    }
 }

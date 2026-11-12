@@ -78,6 +78,7 @@
             "error": null
         }
     },
+    "outbox_pending": 0,
     "tasks": [
         {
             "slug": "backup-run-only-db",
