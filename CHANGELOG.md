@@ -2,6 +2,25 @@
 
 All notable changes to `pingpong-agent` will be documented in this file.
 
+## v1.3.0 - 2026-11-13
+
+This release makes the Agent survive a server that temporarily cannot reach PingPong. Check-ins that do not get through are kept and replayed, and PingPong learns how long the server was cut off and why, so it can tell a network outage from a task that never finished.
+
+### Added
+
+- **Outbox for Check-ins.** A Check-in that does not reach PingPong (network error, timeout, `5xx` or `429`) is kept on disk in `storage/framework/pingpong-agent/<server>/outbox.json` and replayed unchanged, oldest first, right after the next tick PingPong accepts. At most 50 per tick, no new replay after 10 seconds, at most 500 kept and none older than 24 hours. A `4xx` is still dropped. ([#21](https://github.com/kobalt-digital/pingpong-agent/pull/21))
+- **`occurred_at` on Check-ins.** When the scheduler event fired, in UTC with milliseconds, so a late Check-in still says when the task started or ended. ([#21](https://github.com/kobalt-digital/pingpong-agent/pull/21))
+- **`connectivity` on the tick.** The first tick that gets through after requests failed reports since when, until when, how many attempts failed and the last error (`dns`, `connect`, `timeout`, `tls`, `http_5xx`, `rate_limited` or `other`). ([#21](https://github.com/kobalt-digital/pingpong-agent/pull/21))
+- **`outbox_pending` on the tick.** How many Check-ins still wait, so PingPong keeps its flush window open while replays are coming. ([#21](https://github.com/kobalt-digital/pingpong-agent/pull/21))
+
+### Compatibility
+
+- No schema bump: older PingPong ignores the new keys.
+- PHP `^8.2` and Laravel 12 and 13 remain supported.
+- The outbox and connectivity state live under `storage/framework`, which must be writable and should persist across deploys (it does on Forge and Envoyer). When it cannot be written, nothing breaks: the Agent behaves as before.
+
+**Full Changelog**: https://github.com/kobalt-digital/pingpong-agent/compare/v1.2.0...v1.3.0
+
 ## v1.2.0 - 2026-11-05
 
 This release adds visibility into Flare integration health and the environment each application runs in. It also strengthens static analysis and adapts the release workflows to a protected `main` branch.
