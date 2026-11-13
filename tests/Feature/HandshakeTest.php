@@ -70,7 +70,7 @@ it('sends a handshake shaped like the schema 1 fixture', function () {
     });
 });
 
-it('sends one handshake per agent version', function () {
+it('does not repeat a fresh handshake on the next request', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
     runningAgentVersion('0.1.0');
@@ -82,6 +82,49 @@ it('sends one handshake per agent version', function () {
 
     Http::assertSentCount(1);
 });
+
+it('refreshes the handshake after an hour even when its version has not changed', function () {
+    $this->freezeTime();
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    Http::fake([HANDSHAKE_URL => Http::response()]);
+
+    app()->terminate();
+    $this->travel(59)->minutes();
+    app()->terminate();
+    Http::assertSentCount(1);
+
+    $this->travel(1)->minutes();
+    app()->terminate();
+    Http::assertSentCount(2);
+});
+
+it('does not let a legacy permanent handshake marker suppress a fresh report', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    runningAgentVersion('v1.3.0');
+    cache()->forever('pingpong-agent:handshake:v1.3.0', true);
+    Http::fake([HANDSHAKE_URL => Http::response()]);
+
+    app()->terminate();
+
+    Http::assertSentCount(1);
+});
+
+it('reports immediately when its destination changes', function (string $setting, string $value) {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    Http::fake([
+        HANDSHAKE_URL => Http::response(),
+        'https://other.example.com/api/agent/handshake' => Http::response(),
+    ]);
+
+    app()->terminate();
+    config()->set($setting, $value);
+    app()->terminate();
+
+    Http::assertSentCount(2);
+})->with([
+    'monitor key' => ['pingpong-agent.key', 'pp_agent_another_monitor'],
+    'endpoint' => ['pingpong-agent.endpoint', 'https://other.example.com'],
+]);
 
 it('sends a new handshake after the agent is upgraded', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
