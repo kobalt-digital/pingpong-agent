@@ -11,5 +11,6 @@
         "grace": 10
     },
     "exit_code": 2,
-    "message": "Scheduled command [backup:run --only-db] failed with exit code [2]."
+    "message": "Scheduled command [backup:run --only-db] failed with exit code [2].",
+    "occurred_at": "2026-11-12T09:43:01.500Z"
 }

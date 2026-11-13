@@ -10,6 +10,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Scheduling\ReportScheduledTasks;
@@ -65,6 +66,25 @@ it('checks in success under the run id of the start', function () {
 
     expect($success['signal'])->toBe('success')
         ->and($success['run_id'])->toBe($start['run_id']);
+});
+
+it('stamps every check-in with the moment its event happened, in UTC with milliseconds', function () {
+    Date::setTestNow(Date::parse('2026-11-12 10:42:07.250', 'Europe/Amsterdam'));
+
+    $task = app(Schedule::class)->command('backup:run')->daily();
+
+    event(new ScheduledTaskStarting($task));
+
+    Date::setTestNow(Date::parse('2026-11-12 10:43:01.500', 'Europe/Amsterdam'));
+
+    $task->exitCode = 0;
+
+    event(new ScheduledTaskFinished($task, 54.25));
+
+    [$start, $success] = sentCheckIns();
+
+    expect($start['occurred_at'])->toBe('2026-11-12T09:42:07.250Z')
+        ->and($success['occurred_at'])->toBe('2026-11-12T09:43:01.500Z');
 });
 
 it('gives every run its own run id', function () {

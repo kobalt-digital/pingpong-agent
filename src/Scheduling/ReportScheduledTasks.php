@@ -10,8 +10,10 @@ use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Console\Events\ScheduledTaskStarting;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use KobaltDigital\PingPong\Delivery\Outbox;
 use KobaltDigital\PingPong\Server;
 use KobaltDigital\PingPong\Transport;
 use Throwable;
@@ -23,9 +25,13 @@ use WeakMap;
  */
 class ReportScheduledTasks
 {
+    public const CHECK_IN_PATH = 'api/agent/check-in';
+
     public const MESSAGE_MAX_LENGTH = 255;
 
     public const BACKGROUND_RUN_ID_SECONDS = 86400;
+
+    public const TIME_FORMAT = 'Y-m-d\TH:i:s.vp';
 
     /** @var WeakMap<Event, string> */
     private WeakMap $runIds;
@@ -34,6 +40,7 @@ class ReportScheduledTasks
         private Transport $transport,
         private ScheduledTasks $tasks,
         private Repository $cache,
+        private Outbox $outbox,
     ) {
         $this->runIds = new WeakMap;
     }
@@ -143,6 +150,8 @@ class ReportScheduledTasks
 
     private function checkIn(Event $event, CheckInSignal $signal, ?string $message = null): void
     {
+        $occurredAt = Date::now()->utc()->format(self::TIME_FORMAT);
+
         $task = $this->tasks->find($event);
 
         if ($task === null) {
@@ -151,7 +160,7 @@ class ReportScheduledTasks
             return;
         }
 
-        $this->transport->send('api/agent/check-in', [
+        $payload = [
             'slug' => $task->slug,
             'signal' => $signal->value,
             'run_id' => $this->runIds[$event] ?? Str::uuid()->toString(),
@@ -163,7 +172,14 @@ class ReportScheduledTasks
             ],
             'exit_code' => $signal === CheckInSignal::FAIL ? $event->exitCode : null,
             'message' => $message === null ? null : Str::limit($message, self::MESSAGE_MAX_LENGTH - 3),
-        ]);
+            'occurred_at' => $occurredAt,
+        ];
+
+        if (! $this->transport->attempt(self::CHECK_IN_PATH, $payload)->undelivered()) {
+            return;
+        }
+
+        $this->outbox->push($payload);
     }
 
     private function backgroundRunIdKey(Event $event): string

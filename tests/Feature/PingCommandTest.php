@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
+use KobaltDigital\PingPong\Delivery\Connectivity;
+use KobaltDigital\PingPong\Delivery\Failure;
+use KobaltDigital\PingPong\Delivery\FailureKind;
 use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\InstalledPackages;
 use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
@@ -118,6 +121,8 @@ it('sends a tick shaped like the schema 1 fixture', function () {
     insertJob('default', now()->getTimestamp() - 40);
     insertJob('mail', now()->getTimestamp() - 5);
     useComposerLock(['laravel/framework' => 'v13.2.0']);
+
+    app(Connectivity::class)->recordFailure(new Failure(FailureKind::DNS, 'cURL error 28: Resolving timed out after 5000 milliseconds'));
 
     app(Schedule::class)->command('backup:run --only-db')
         ->description('Nightly database backup')
