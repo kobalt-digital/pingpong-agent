@@ -7,12 +7,15 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\AgentVersion;
 use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\Server;
 use KobaltDigital\PingPong\Transport;
 use Throwable;
 
 class SendHandshake
 {
     public const RETRY_AFTER_SECONDS = 600;
+
+    public const REFRESH_AFTER_SECONDS = 3600;
 
     public function __construct(
         private Transport $transport,
@@ -33,7 +36,7 @@ class SendHandshake
         }
 
         try {
-            $this->sendOncePerVersion($this->agentVersion->current());
+            $this->sendWhenDue($this->agentVersion->current());
         } catch (Throwable $exception) {
             Log::warning('PingPong Agent could not send its handshake.', [
                 'exception' => $exception->getMessage(),
@@ -41,13 +44,23 @@ class SendHandshake
         }
     }
 
-    private function sendOncePerVersion(string $version): void
+    private function sendWhenDue(string $version): void
     {
-        if ($this->cache->has("pingpong-agent:handshake:{$version}")) {
+        $identity = hash('sha256', serialize([
+            config()->string('pingpong-agent.endpoint'),
+            config()->string('pingpong-agent.key'),
+            Server::name(),
+            $version,
+            PHP_VERSION,
+            $this->app->version(),
+        ]));
+        $cacheKey = "pingpong-agent:handshake-fresh:{$identity}";
+
+        if ($this->cache->has($cacheKey)) {
             return;
         }
 
-        if (! $this->cache->add("pingpong-agent:handshake-attempt:{$version}", true, self::RETRY_AFTER_SECONDS)) {
+        if (! $this->cache->add("{$cacheKey}:attempt", true, self::RETRY_AFTER_SECONDS)) {
             return;
         }
 
@@ -63,7 +76,7 @@ class SendHandshake
             return;
         }
 
-        $this->cache->forever("pingpong-agent:handshake:{$version}", true);
+        $this->cache->put($cacheKey, true, self::REFRESH_AFTER_SECONDS);
     }
 
     /** @return array{cores?: int} */
