@@ -15,6 +15,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `machine_id` | string or null | `/etc/machine-id`, else `/var/lib/dbus/machine-id`: 32 lowercase hex characters that identify the operating system installation, so apps on one machine can be grouped. `null` when neither holds one, for example on macOS or in a container without it |
 | `os_name` | string or null | `PRETTY_NAME` from `/etc/os-release`, else `/usr/lib/os-release`, unquoted and cut to 100 characters, such as `Ubuntu 24.04.1 LTS`. `null` when neither file can be read or names it, for example on macOS |
 | `kernel` | string or null | Release of the running kernel from `php_uname('r')`, cut to 100 characters, such as `6.8.0-45-generic`. `null` when it is empty or `php_uname` is disabled |
+| `fleet` | string or null | The stable name of short-lived instances that stand for one server, so PingPong keeps them as one. On ECS (Fargate or EC2, detected by `ECS_CONTAINER_METADATA_URI_V4`) `ecs:{cluster}/{service}`: the cluster's name (the last part of its ARN) and the `ServiceName` of the task metadata endpoint (`{ECS_CONTAINER_METADATA_URI_V4}/task`, 1 second timeout, asked once per process), else the task definition `Family`; cut to 255 characters, such as `ecs:prod/web`. Every task of a service gets a new hostname and machine id; the fleet stays. `null` off ECS and when the endpoint does not answer |
 
 ## Handshake
 
@@ -27,6 +28,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "agent_version": "0.1.0",
     "php_version": "8.4.12",
     "laravel_version": "13.2.0",
@@ -54,6 +56,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "sent_at": "2026-11-16T21:30:00+00:00",
     "tick_minutes": 1,
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
@@ -67,7 +70,8 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
         "cache": {
             "reachable": true,
             "latency_ms": 0.42,
-            "error": null
+            "error": null,
+            "driver": "database"
         },
         "disk": {
             "free_bytes": 52613349376,
@@ -129,7 +133,11 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
                 "libc6"
             ],
             "updates_pending": 14,
-            "updates_security": 6
+            "updates_security": 6,
+            "update_packages": [
+                { "name": "openssl", "version": "3.0.13-0ubuntu3.5", "security": true },
+                { "name": "nginx", "version": "1.24.0-2ubuntu7.2", "security": false }
+            ]
         },
         "app": {
             "env": "production",
@@ -282,6 +290,13 @@ Writes a random key to the app's default cache store, reads it back and removes 
 | `reachable` | boolean | Whether the write, read and removal succeeded and the read returned what was written |
 | `latency_ms` | float or null | Time the three operations took together, in milliseconds. `null` when unreachable |
 | `error` | string or null | Why the cache was unreachable |
+| `driver` | string or null | The driver of the default cache store (`cache.stores.{cache.default}.driver`), such as `redis`, `database` or `file`, cut to 32 characters. `null` when the configuration names none |
+| `redis` | object, optional | Only on the `redis` driver while the cache is reachable and `INFO` can be read: what Redis says about itself. Left out otherwise. Read from either client (phpredis answers one flat list, Predis one per section) |
+| `redis.version` | string or null | `redis_version`, cut to 32 characters |
+| `redis.used_memory_bytes` | integer or null | `used_memory` |
+| `redis.maxmemory_bytes` | integer or null | `maxmemory`; `0` means no limit |
+| `redis.connected_clients` | integer or null | `connected_clients` |
+| `redis.evicted_keys` | integer or null | `evicted_keys`, since Redis started |
 
 ### `signals.disk`
 
@@ -379,6 +394,7 @@ How long the machine has been up, whether it waits for a reboot and how many pac
 | `reboot_packages` | array of strings or null | The packages that asked for the reboot, the unique lines of `/var/run/reboot-required.pkgs`: at most 50, each cut to 100 characters. `null` when that file does not exist |
 | `updates_pending` | integer or null | Updates that can be installed, from the English text Ubuntu's update-notifier writes to `/var/lib/update-notifier/updates-available`: the first number of the line with "can be applied" ("14 updates can be applied immediately."), on Ubuntu 20.04 "can be installed", or before that "can be updated" ("14 packages can be updated."). `null` when the file cannot be read or no line matches, for example in another language |
 | `updates_security` | integer or null | How many of those are security updates: the first number of each line with "security update" ("6 of these updates are standard security updates.", before 22.04 "6 updates are security updates."), added up: with Ubuntu Pro, ESM Infra, ESM Apps and standard each have a line. `0` when `updates_pending` was found without such a line. A line about "additional" security updates ("5 additional security updates can be applied with ESM Apps.") counts updates that cannot be installed without Ubuntu Pro, and counts as neither. `null` exactly when `updates_pending` is |
+| `update_packages` | array of objects or null | The pending updates by name while `updates_pending` is above 0, from `apt list --upgradable` (run without a shell, in the C locale, 10 second timeout, on a system like Debian): at most 500 of `{name, version, security}`, `security` true when one of the package's suites ends in `-security`. Remembered in the app's cache until `updates-available` changes (apt rewrites it whenever its lists or the installed packages change), for a day at most, so apt runs rarely. `null` when none are pending, apt is missing, or it failed |
 
 ### `signals.app`
 
@@ -439,6 +455,7 @@ The facts about the app are read every tick. Flare itself is asked about the key
     "machine_id": "a3e81f05c2d94b7e86f1d0c4b9a27e53",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
     "dispatched_at": "2026-09-25T12:00:00.250Z",
     "dispatched_from": "web-01",
@@ -466,6 +483,7 @@ The facts about the app are read every tick. Flare itself is asked about the key
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "slug": "backup-run-only-db",
     "signal": "start",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
@@ -490,6 +508,7 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "slug": "backup-run-only-db",
     "signal": "fail",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",

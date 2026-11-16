@@ -4,6 +4,7 @@
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "sent_at": "2026-11-16T21:30:00+00:00",
     "tick_minutes": 1,
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
@@ -17,7 +18,8 @@
         "cache": {
             "reachable": true,
             "latency_ms": 0.42,
-            "error": null
+            "error": null,
+            "driver": "database"
         },
         "disk": {
             "free_bytes": 52613349376,
@@ -79,7 +81,19 @@
                 "libc6"
             ],
             "updates_pending": 14,
-            "updates_security": 6
+            "updates_security": 6,
+            "update_packages": [
+                {
+                    "name": "openssl",
+                    "version": "3.0.13-0ubuntu3.5",
+                    "security": true
+                },
+                {
+                    "name": "nginx",
+                    "version": "1.24.0-2ubuntu7.2",
+                    "security": false
+                }
+            ]
         },
         "app": {
             "env": "production",
