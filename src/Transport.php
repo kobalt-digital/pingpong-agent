@@ -24,6 +24,7 @@ class Transport
     public function __construct(
         private Application $app,
         private Connectivity $connectivity,
+        private Host $host,
     ) {}
 
     /**
@@ -96,6 +97,9 @@ class Transport
                 ->post($path, [
                     'schema' => self::SCHEMA,
                     'server' => Server::name(),
+                    'machine_id' => $this->host->machineId(),
+                    'os_name' => $this->host->osName(),
+                    'kernel' => $this->host->kernel(),
                     ...$payload,
                 ]);
         } catch (Throwable $exception) {

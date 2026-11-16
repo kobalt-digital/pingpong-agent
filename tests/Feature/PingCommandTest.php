@@ -6,6 +6,7 @@ use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -147,6 +148,17 @@ it('sends a tick shaped like the schema 1 fixture', function () {
     Http::assertSent(fn (Request $request) => $request->url() === TICK_URL
         && $request->hasHeader('Authorization', 'Bearer pp_agent_test')
         && payloadShape(json_decode($request->body())) === payloadShape(payloadFixture('tick')));
+});
+
+it('tells PingPong when the tick was built, by the app\'s clock', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    $this->travelTo(Date::parse('2026-11-16 21:30:00.250', 'UTC'));
+
+    Http::fake([TICK_URL => Http::response()]);
+
+    $this->artisan('pingpong:ping')->assertSuccessful();
+
+    Http::assertSent(fn (Request $request) => $request['sent_at'] === '2026-11-16T21:30:00+00:00');
 });
 
 it('sends no tick without a key', function () {

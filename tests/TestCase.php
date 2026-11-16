@@ -22,7 +22,6 @@ class TestCase extends Orchestra
         Http::preventStrayRequests();
         Process::preventStrayProcesses();
 
-        $this->app->instance(Host::class, new FakeHost);
         $this->app->instance(InstalledPackages::class, new FakeInstalledPackages);
 
         $this->useTemporaryStorage();
@@ -56,6 +55,10 @@ class TestCase extends Orchestra
     protected function defineEnvironment($app): void
     {
         $app['env'] = 'local';
+
+        // Bound before the providers boot, since the scheduler subscriber they
+        // resolve holds a Transport, and with it a Host.
+        $app->instance(Host::class, new FakeHost);
 
         $app['config']->set('cache.default', 'array');
         $app['config']->set('queue.failed.database', 'testing');

@@ -2,6 +2,9 @@
 
 namespace KobaltDigital\PingPong;
 
+use Illuminate\Support\Facades\Process;
+use Throwable;
+
 /**
  * Reads operating system facts that only some platforms offer. Every method
  * answers null when this one does not, so callers never have to know whether
@@ -9,6 +12,22 @@ namespace KobaltDigital\PingPong;
  */
 class Host
 {
+    public const DF_TIMEOUT_SECONDS = 2;
+
+    /** The longest operating system name or kernel release PingPong keeps. */
+    public const MAX_NAME_LENGTH = 100;
+
+    /** The most packages that asked for a reboot PingPong keeps. */
+    public const MAX_REBOOT_PACKAGES = 50;
+
+    public const RUN_DIRECTORY = '/var/run';
+
+    public const REBOOT_REQUIRED_FILE = '/var/run/reboot-required';
+
+    public const REBOOT_PACKAGES_FILE = '/var/run/reboot-required.pkgs';
+
+    public const UPDATES_AVAILABLE_FILE = '/var/lib/update-notifier/updates-available';
+
     /** @return array{'1m': float, '5m': float, '15m': float}|null */
     public function loadAverage(): ?array
     {
@@ -81,6 +100,444 @@ class Host
         ];
     }
 
+    /** @return array{oom_kills: ?int, swap_in_pages: ?int, swap_out_pages: ?int}|null */
+    public function vmStat(): ?array
+    {
+        $contents = $this->read('/proc/vmstat');
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseVmStat($contents);
+    }
+
+    /**
+     * Counters since boot. A kernel that lacks one (`oom_kill` came in 4.13)
+     * leaves that one null.
+     *
+     * @return array{oom_kills: ?int, swap_in_pages: ?int, swap_out_pages: ?int}
+     */
+    public function parseVmStat(string $contents): array
+    {
+        preg_match_all('/^(\w+) (\d+)\r?$/m', $contents, $matches, PREG_SET_ORDER);
+
+        $counters = [];
+
+        foreach ($matches as $match) {
+            $counters[$match[1]] = (int) $match[2];
+        }
+
+        return [
+            'oom_kills' => $counters['oom_kill'] ?? null,
+            'swap_in_pages' => $counters['pswpin'] ?? null,
+            'swap_out_pages' => $counters['pswpout'] ?? null,
+        ];
+    }
+
+    /** @return array{user: int, nice: int, system: int, idle: int, iowait: int, irq: int, softirq: int, steal: int}|null */
+    public function cpuTimes(): ?array
+    {
+        $contents = $this->read('/proc/stat');
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseCpuTimes($contents);
+    }
+
+    /**
+     * Jiffies since boot from the line that adds up every CPU, so PingPong
+     * takes the difference between two ticks.
+     *
+     * @return array{user: int, nice: int, system: int, idle: int, iowait: int, irq: int, softirq: int, steal: int}|null
+     */
+    public function parseCpuTimes(string $contents): ?array
+    {
+        if (preg_match('/^cpu +(\d+(?: +\d+){7,})/m', $contents, $match) !== 1) {
+            return null;
+        }
+
+        $values = array_map(intval(...), explode(' ', (string) preg_replace('/ +/', ' ', $match[1])));
+
+        return [
+            'user' => $values[0],
+            'nice' => $values[1],
+            'system' => $values[2],
+            'idle' => $values[3],
+            'iowait' => $values[4],
+            'irq' => $values[5],
+            'softirq' => $values[6],
+            'steal' => $values[7],
+        ];
+    }
+
+    /**
+     * The share of the last minute in which tasks waited on CPU, memory or
+     * IO. Null without `/proc/pressure` (a kernel before 4.20, or PSI
+     * switched off), and when none of it could be read.
+     *
+     * @return array{cpu_some: ?float, memory_some: ?float, memory_full: ?float, io_some: ?float, io_full: ?float}|null
+     */
+    public function pressure(): ?array
+    {
+        if (! @is_dir('/proc/pressure')) {
+            return null;
+        }
+
+        $cpu = $this->parsePressure((string) $this->read('/proc/pressure/cpu'));
+        $memory = $this->parsePressure((string) $this->read('/proc/pressure/memory'));
+        $io = $this->parsePressure((string) $this->read('/proc/pressure/io'));
+
+        $pressure = [
+            'cpu_some' => $cpu['some'] ?? null,
+            'memory_some' => $memory['some'] ?? null,
+            'memory_full' => $memory['full'] ?? null,
+            'io_some' => $io['some'] ?? null,
+            'io_full' => $io['full'] ?? null,
+        ];
+
+        if (array_filter($pressure, fn (?float $value): bool => $value !== null) === []) {
+            return null;
+        }
+
+        return $pressure;
+    }
+
+    /**
+     * The `avg60` of each line of a `/proc/pressure` file.
+     *
+     * @return array<'some'|'full', float>
+     */
+    public function parsePressure(string $contents): array
+    {
+        preg_match_all('/^(some|full) .*\bavg60=(\d+(?:\.\d+)?)\b/m', $contents, $matches, PREG_SET_ORDER);
+
+        $pressure = [];
+
+        foreach ($matches as $match) {
+            $pressure[$match[1]] = (float) $match[2];
+        }
+
+        return $pressure;
+    }
+
+    /**
+     * Inodes of the filesystem that holds the path. PHP has no statvfs, so
+     * this asks `df`, without a shell, in the C locale so its header is not
+     * translated. Null without `df` or `proc_open`, when it fails or hangs,
+     * and when the filesystem keeps no inode count (btrfs reports 0).
+     *
+     * @return array{total: int, free: int}|null
+     */
+    public function inodes(string $path): ?array
+    {
+        $binary = $this->executable('df');
+
+        if ($binary === null || ! function_exists('proc_open')) {
+            return null;
+        }
+
+        try {
+            $result = Process::timeout(self::DF_TIMEOUT_SECONDS)
+                ->env(['LC_ALL' => 'C'])
+                ->run([$binary, '-iP', $path]);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($result->failed()) {
+            return null;
+        }
+
+        return $this->parseInodes($result->output());
+    }
+
+    /**
+     * Reads the output of `df -iP`. The header must name the columns, since
+     * a `df` that prints blocks first (macOS) would otherwise pass for one.
+     *
+     * @return array{total: int, free: int}|null
+     */
+    public function parseInodes(string $output): ?array
+    {
+        $lines = preg_split('/\R/', trim($output));
+
+        if ($lines === false || count($lines) < 2) {
+            return null;
+        }
+
+        $header = preg_split('/\s+/', trim($lines[0]));
+
+        if ($header === false
+            || strcasecmp($header[1] ?? '', 'Inodes') !== 0
+            || ! in_array(strtolower($header[3] ?? ''), ['ifree', 'free', 'available'], true)) {
+            return null;
+        }
+
+        if (preg_match('/^.*?\s+(\d+|-)\s+(\d+|-)\s+(\d+|-)\s+(\d+%|-)(?:\s|$)/', $lines[1], $match) !== 1) {
+            return null;
+        }
+
+        [, $total, , $free] = $match;
+
+        if (! ctype_digit($total) || (int) $total === 0 || ! ctype_digit($free)) {
+            return null;
+        }
+
+        return ['total' => (int) $total, 'free' => (int) $free];
+    }
+
+    /**
+     * The id systemd or D-Bus gave this installation of the operating
+     * system. Unlike the hostname it stays when the machine is renamed, and
+     * two machines with one name still differ.
+     */
+    public function machineId(): ?string
+    {
+        foreach (['/etc/machine-id', '/var/lib/dbus/machine-id'] as $path) {
+            $machineId = $this->parseMachineId((string) $this->read($path));
+
+            if ($machineId !== null) {
+                return $machineId;
+            }
+        }
+
+        return null;
+    }
+
+    public function parseMachineId(string $contents): ?string
+    {
+        $machineId = strtolower(trim($contents));
+
+        if (preg_match('/^[0-9a-f]{32}$/', $machineId) !== 1) {
+            return null;
+        }
+
+        return $machineId;
+    }
+
+    /**
+     * The name the distribution gives itself, such as "Ubuntu 24.04.1 LTS".
+     * Null where there is no os-release file (macOS) or it cannot be read.
+     */
+    public function osName(): ?string
+    {
+        foreach (['/etc/os-release', '/usr/lib/os-release'] as $path) {
+            $osName = $this->parseOsName((string) $this->read($path));
+
+            if ($osName !== null) {
+                return $osName;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The `PRETTY_NAME` of an os-release file, whose values follow shell
+     * quoting: in double or single quotes, or bare.
+     */
+    public function parseOsName(string $contents): ?string
+    {
+        if (preg_match('/^PRETTY_NAME=(.*)$/m', $contents, $match) !== 1) {
+            return null;
+        }
+
+        $value = trim($match[1]);
+
+        if (preg_match('/^"(.*)"$/', $value, $quoted) === 1) {
+            $value = (string) preg_replace('/\\\\(["\\\\$`])/', '$1', $quoted[1]);
+        } elseif (preg_match("/^'(.*)'$/", $value, $quoted) === 1) {
+            $value = $quoted[1];
+        }
+
+        return $this->limited($value);
+    }
+
+    /**
+     * The release of the running kernel, such as "6.8.0-45-generic". Null
+     * when `php_uname` is disabled.
+     */
+    public function kernel(): ?string
+    {
+        if (! function_exists('php_uname')) {
+            return null;
+        }
+
+        return $this->limited((string) @php_uname('r'));
+    }
+
+    /** Whole seconds since the machine booted, null without `/proc/uptime`. */
+    public function uptime(): ?int
+    {
+        $contents = $this->read('/proc/uptime');
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseUptime($contents);
+    }
+
+    /** The first number of `/proc/uptime`, floored. */
+    public function parseUptime(string $contents): ?int
+    {
+        if (preg_match('/^\s*(\d+)(?:\.\d+)?(?:\s|$)/', $contents, $match) !== 1) {
+            return null;
+        }
+
+        return (int) $match[1];
+    }
+
+    /**
+     * Whether a package (a kernel, libc) asked for a reboot, as Debian and
+     * Ubuntu mark it. Other distributions have no such marker, so there it
+     * is null rather than false.
+     */
+    public function rebootRequired(): ?bool
+    {
+        $runDirectoryReadable = @is_dir(self::RUN_DIRECTORY) && @is_readable(self::RUN_DIRECTORY);
+
+        return $this->parseRebootRequired(
+            (string) $this->osRelease(),
+            $runDirectoryReadable,
+            $runDirectoryReadable && @file_exists(self::REBOOT_REQUIRED_FILE),
+        );
+    }
+
+    /**
+     * True when the marker exists, false when it does not but its directory
+     * can be read, null when that directory cannot be read or the system is
+     * not like Debian.
+     */
+    public function parseRebootRequired(string $osRelease, bool $runDirectoryReadable, bool $markerExists): ?bool
+    {
+        if (! $this->isDebianLike($osRelease) || ! $runDirectoryReadable) {
+            return null;
+        }
+
+        return $markerExists;
+    }
+
+    /**
+     * Whether the `ID` or `ID_LIKE` of an os-release file names Debian or
+     * Ubuntu, as on Raspbian, Mint and Pop!_OS.
+     */
+    public function isDebianLike(string $osRelease): bool
+    {
+        preg_match_all('/^(ID|ID_LIKE)=(.*)$/m', $osRelease, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $match) {
+            $ids = preg_split('/\s+/', strtolower(trim($match[2], " \t\r\"'")));
+
+            if (array_intersect($ids === false ? [] : $ids, ['debian', 'ubuntu']) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The packages that asked for the reboot. Null when no list exists.
+     *
+     * @return list<string>|null
+     */
+    public function rebootPackages(): ?array
+    {
+        $contents = $this->read(self::REBOOT_PACKAGES_FILE);
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseRebootPackages($contents);
+    }
+
+    /**
+     * One package per line, which apt repeats when it upgrades a package
+     * twice before the reboot: unique, each cut to 100 characters, at most 50.
+     *
+     * @return list<string>
+     */
+    public function parseRebootPackages(string $contents): array
+    {
+        $packages = [];
+
+        foreach (preg_split('/\R/', $contents) ?: [] as $line) {
+            $package = $this->limited($line);
+
+            if ($package !== null) {
+                $packages[$package] = true;
+            }
+
+            if (count($packages) === self::MAX_REBOOT_PACKAGES) {
+                break;
+            }
+        }
+
+        return array_map(strval(...), array_keys($packages));
+    }
+
+    /**
+     * The package updates Ubuntu's update-notifier counted. Null where it
+     * did not run, and when its text is in a language this cannot read.
+     *
+     * @return array{pending: int, security: int}|null
+     */
+    public function updates(): ?array
+    {
+        $contents = $this->read(self::UPDATES_AVAILABLE_FILE);
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseUpdates($contents);
+    }
+
+    /**
+     * Reads the English text of `updates-available`, such as "14 updates can
+     * be applied immediately." with "6 of these updates are standard security
+     * updates.", on Ubuntu 20.04 "14 updates can be installed immediately.",
+     * or before that "14 packages can be updated." with "6 updates are
+     * security updates.". With Ubuntu Pro each source (ESM Infra, ESM Apps,
+     * standard) has a security line of its own, so they add up; no security
+     * line means none. A line about "additional" security updates counts
+     * updates that cannot be installed without Ubuntu Pro, so it is neither.
+     *
+     * @return array{pending: int, security: int}|null
+     */
+    public function parseUpdates(string $contents): ?array
+    {
+        $pending = null;
+        $security = 0;
+
+        foreach (preg_split('/\R/', $contents) ?: [] as $line) {
+            if (preg_match('/^\D*(\d+)/', $line, $number) !== 1 || str_contains($line, 'additional')) {
+                continue;
+            }
+
+            if (preg_match('/can be (applied|installed|updated)/', $line) === 1) {
+                $pending ??= (int) $number[1];
+
+                continue;
+            }
+
+            if (str_contains($line, 'security update')) {
+                $security += (int) $number[1];
+            }
+        }
+
+        if ($pending === null) {
+            return null;
+        }
+
+        return ['pending' => $pending, 'security' => $security];
+    }
+
     public function cores(): ?int
     {
         $contents = $this->read('/proc/cpuinfo');
@@ -151,6 +608,14 @@ class Host
         ];
     }
 
+    /** Trimmed and cut to what PingPong stores, null when nothing is left. */
+    private function limited(string $value): ?string
+    {
+        $value = trim(mb_substr(trim($value), 0, self::MAX_NAME_LENGTH));
+
+        return $value === '' ? null : $value;
+    }
+
     /**
      * Without `/proc` and without ext-posix nothing can tell, and then the
      * process is taken to run, as the pid file says.
@@ -166,6 +631,12 @@ class Host
         }
 
         return ! @is_dir('/proc');
+    }
+
+    /** The os-release file, which systemd looks for in these two places. */
+    private function osRelease(): ?string
+    {
+        return $this->read('/etc/os-release') ?? $this->read('/usr/lib/os-release');
     }
 
     /**
