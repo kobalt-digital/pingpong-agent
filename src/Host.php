@@ -120,7 +120,7 @@ class Host
      */
     public function parseVmStat(string $contents): array
     {
-        preg_match_all('/^(\w+) (\d+)$/m', $contents, $matches, PREG_SET_ORDER);
+        preg_match_all('/^(\w+) (\d+)\r?$/m', $contents, $matches, PREG_SET_ORDER);
 
         $counters = [];
 
