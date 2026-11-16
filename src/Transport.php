@@ -100,6 +100,7 @@ class Transport
                     'machine_id' => $this->host->machineId(),
                     'os_name' => $this->host->osName(),
                     'kernel' => $this->host->kernel(),
+                    'fleet' => $this->host->fleet(),
                     ...$payload,
                 ]);
         } catch (Throwable $exception) {

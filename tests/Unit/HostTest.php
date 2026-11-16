@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use KobaltDigital\PingPong\Host;
 
@@ -417,3 +418,33 @@ it('gives no update counts for text it cannot read', function (string $contents)
     'german' => "\n14 Aktualisierungen können sofort angewendet werden.\n6 dieser Aktualisierungen sind Standard-Sicherheitsaktualisierungen.\n",
     'only a security line' => "6 updates are security updates.\n",
 ]);
+
+it('reads the upgradable packages apt lists, marking those from a security pocket', function () {
+    $output = <<<'TXT'
+        WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+
+        Listing...
+        libssl3t64/noble-updates,noble-security 3.0.13-0ubuntu3.5 amd64 [upgradable from: 3.0.13-0ubuntu3.4]
+        nginx/noble-updates 1.24.0-2ubuntu7.2 all [upgradable from: 1.24.0-2ubuntu7.1]
+        TXT;
+
+    expect((new Host)->parseUpgradable($output))->toBe([
+        ['name' => 'libssl3t64', 'version' => '3.0.13-0ubuntu3.5', 'security' => true],
+        ['name' => 'nginx', 'version' => '1.24.0-2ubuntu7.2', 'security' => false],
+    ]);
+});
+
+it('names an ECS task\'s fleet by its cluster and service, else its task family', function () {
+    $host = new Host;
+
+    expect($host->parseEcsTask(['Cluster' => 'arn:aws:ecs:eu-west-1:123456789012:cluster/prod', 'ServiceName' => 'sproutmoney-web', 'Family' => 'sproutmoney']))->toBe('ecs:prod/sproutmoney-web')
+        ->and($host->parseEcsTask(['Cluster' => 'prod', 'Family' => 'sproutmoney-migrate']))->toBe('ecs:prod/sproutmoney-migrate')
+        ->and($host->parseEcsTask(['Family' => 'sproutmoney']))->toBeNull();
+});
+
+it('asks the ECS task metadata endpoint for the fleet, and is no fleet off ECS', function () {
+    Http::fake(['http://169.254.170.2/v4/abc/task' => Http::response(['Cluster' => 'arn:aws:ecs:eu-west-1:1:cluster/prod', 'ServiceName' => 'web', 'Family' => 'app'])]);
+
+    expect(withEnv([Host::ECS_METADATA_VARIABLE => null], fn () => (new Host)->fleet()))->toBeNull()
+        ->and(withEnv([Host::ECS_METADATA_VARIABLE => 'http://169.254.170.2/v4/abc'], fn () => (new Host)->fleet()))->toBe('ecs:prod/web');
+});

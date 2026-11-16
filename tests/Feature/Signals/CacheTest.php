@@ -28,6 +28,7 @@ it('reports an unreachable cache as a fact', function () {
         'reachable' => false,
         'latency_ms' => null,
         'error' => 'Connection refused [tcp://127.0.0.1:6379]',
+        'driver' => 'array',
     ]);
 });
 
@@ -52,4 +53,24 @@ it('probes the cache even while the tick holds its overlap lock', function () {
     expect($ping->mutex->create($ping))->toBeTrue();
 
     expect(app(Cache::class)->collect()['reachable'])->toBeTrue();
+});
+
+it('names the driver of the default store, and sends no Redis facts for another driver', function () {
+    $signal = app(Cache::class)->collect();
+
+    expect($signal['driver'])->toBe('array')
+        ->and($signal)->not->toHaveKey('redis');
+});
+
+it('reads the Redis INFO fields from phpredis and from Predis alike', function () {
+    $facts = ['version' => '7.2.4', 'used_memory_bytes' => 412000000, 'maxmemory_bytes' => 1073741824, 'connected_clients' => 23, 'evicted_keys' => 4];
+
+    expect(Cache::redisFacts(['redis_version' => '7.2.4', 'used_memory' => '412000000', 'maxmemory' => '1073741824', 'connected_clients' => '23', 'evicted_keys' => '4', 'role' => 'master']))->toBe($facts)
+        ->and(Cache::redisFacts([
+            'Server' => ['redis_version' => '7.2.4'],
+            'Clients' => ['connected_clients' => 23],
+            'Memory' => ['used_memory' => 412000000, 'maxmemory' => 1073741824],
+            'Stats' => ['evicted_keys' => 4],
+        ]))->toBe($facts)
+        ->and(Cache::redisFacts(['role' => 'master']))->toBeNull();
 });

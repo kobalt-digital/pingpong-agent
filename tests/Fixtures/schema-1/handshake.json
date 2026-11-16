@@ -4,6 +4,7 @@
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "os_name": "Ubuntu 24.04.1 LTS",
     "kernel": "6.8.0-45-generic",
+    "fleet": null,
     "agent_version": "0.1.0",
     "php_version": "8.4.12",
     "laravel_version": "13.2.0",

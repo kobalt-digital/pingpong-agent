@@ -17,6 +17,7 @@ class FakeHost extends Host
      * @param  array{total: int, free: int}|null  $inodes
      * @param  list<string>|null  $rebootPackages
      * @param  array{pending: int, security: int}|null  $updates
+     * @param  list<array{name: string, version: ?string, security: bool}>|null  $updatePackages
      */
     public function __construct(
         private ?array $loadAverage = ['1m' => 0.81, '5m' => 0.62, '15m' => 0.55],
@@ -35,7 +36,28 @@ class FakeHost extends Host
         private ?bool $rebootRequired = true,
         private ?array $rebootPackages = ['linux-image-6.8.0-49-generic', 'libc6'],
         private ?array $updates = ['pending' => 14, 'security' => 6],
+        private ?array $updatePackages = [
+            ['name' => 'openssl', 'version' => '3.0.13-0ubuntu3.5', 'security' => true],
+            ['name' => 'nginx', 'version' => '1.24.0-2ubuntu7.2', 'security' => false],
+        ],
+        private ?string $fleet = null,
+        private ?int $updatesStamp = 1763328600,
     ) {}
+
+    public function upgradablePackages(): ?array
+    {
+        return $this->updatePackages;
+    }
+
+    public function updatesStamp(): ?int
+    {
+        return $this->updatesStamp;
+    }
+
+    public function fleet(): ?string
+    {
+        return $this->fleet;
+    }
 
     public function loadAverage(): ?array
     {

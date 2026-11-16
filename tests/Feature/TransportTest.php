@@ -37,8 +37,21 @@ it('posts the payload with the bearer key, schema and server to the production e
             'machine_id' => '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
             'os_name' => 'Ubuntu 24.04.1 LTS',
             'kernel' => '6.8.0-45-generic',
+            'fleet' => null,
+            'fleet' => null,
             'agent_version' => '0.1.0',
         ]);
+});
+
+it('names the fleet an ECS task belongs to with every request', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    app()->instance(Host::class, new FakeHost(fleet: 'ecs:prod/sproutmoney-web'));
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/tick' => Http::response()]);
+
+    app(Transport::class)->send('api/agent/tick', []);
+
+    Http::assertSent(fn (Request $request) => $request->data()['fleet'] === 'ecs:prod/sproutmoney-web');
 });
 
 it('sends a machine id of null when the host has none', function () {
@@ -191,6 +204,7 @@ it('follows a redirected endpoint with the POST, body and key intact, and says w
             'machine_id' => '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
             'os_name' => 'Ubuntu 24.04.1 LTS',
             'kernel' => '6.8.0-45-generic',
+            'fleet' => null,
             'agent_version' => '0.1.0',
         ]);
 

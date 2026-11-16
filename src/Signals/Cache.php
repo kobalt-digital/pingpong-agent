@@ -2,6 +2,7 @@
 
 namespace KobaltDigital\PingPong\Signals;
 
+use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Str;
 use KobaltDigital\PingPong\Contracts\Collector;
@@ -23,15 +24,93 @@ class Cache implements Collector
     /**
      * Writes, reads and removes a key of its own. The overlap lock of the
      * tick lives in the same store, but holding a lock proves nothing about
-     * whether the store still reads and writes.
+     * whether the store still reads and writes. Names the driver of the
+     * store, and on Redis adds what Redis says about itself (`redis`, left
+     * out on any other driver and when INFO cannot be read).
      *
+     * @return array{
+     *     reachable: bool,
+     *     latency_ms: ?float,
+     *     error: ?string,
+     *     driver: ?string,
+     *     redis?: array{version: ?string, used_memory_bytes: ?int, maxmemory_bytes: ?int, connected_clients: ?int, evicted_keys: ?int}
+     * }
+     */
+    public function collect(): array
+    {
+        $probe = $this->probe();
+        $redis = $probe['reachable'] ? $this->redis() : null;
+
+        return [...$probe, 'driver' => $this->driver(), ...($redis === null ? [] : ['redis' => $redis])];
+    }
+
+    /**
+     * The fields of Redis INFO PingPong shows, from either client's answer:
+     * phpredis gives one flat list, Predis one list per section.
+     *
+     * @param  array<array-key, mixed>  $info
+     * @return array{version: ?string, used_memory_bytes: ?int, maxmemory_bytes: ?int, connected_clients: ?int, evicted_keys: ?int}|null
+     */
+    public static function redisFacts(array $info): ?array
+    {
+        $flat = [];
+
+        foreach ($info as $key => $value) {
+            if (is_array($value)) {
+                $flat = [...$flat, ...$value];
+            } else {
+                $flat[$key] = $value;
+            }
+        }
+
+        $integer = fn (string $key): ?int => is_numeric($flat[$key] ?? null) ? (int) $flat[$key] : null;
+
+        $facts = [
+            'version' => is_scalar($flat['redis_version'] ?? null) ? mb_substr((string) $flat['redis_version'], 0, 32) : null,
+            'used_memory_bytes' => $integer('used_memory'),
+            'maxmemory_bytes' => $integer('maxmemory'),
+            'connected_clients' => $integer('connected_clients'),
+            'evicted_keys' => $integer('evicted_keys'),
+        ];
+
+        return array_filter($facts, fn (mixed $value): bool => $value !== null) === [] ? null : $facts;
+    }
+
+    /** The driver of the app's default cache store, such as `redis` or `database`. */
+    private function driver(): ?string
+    {
+        $store = config('cache.default');
+        $driver = is_string($store) ? config("cache.stores.{$store}.driver") : null;
+
+        return is_string($driver) ? mb_substr($driver, 0, 32) : null;
+    }
+
+    /** @return array{version: ?string, used_memory_bytes: ?int, maxmemory_bytes: ?int, connected_clients: ?int, evicted_keys: ?int}|null */
+    private function redis(): ?array
+    {
+        $store = $this->cache instanceof \Illuminate\Cache\Repository ? $this->cache->getStore() : null;
+
+        if (! $store instanceof RedisStore) {
+            return null;
+        }
+
+        try {
+            $info = $store->connection()->info();
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_array($info) ? self::redisFacts($info) : null;
+    }
+
+    /**
      * @return array{
      *     reachable: bool,
      *     latency_ms: ?float,
      *     error: ?string
      * }
      */
-    public function collect(): array
+    private function probe(): array
     {
         $probe = Str::random(16);
 

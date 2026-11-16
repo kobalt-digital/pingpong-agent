@@ -2,6 +2,7 @@
 
 namespace KobaltDigital\PingPong;
 
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Throwable;
 
@@ -19,6 +20,24 @@ class Host
 
     /** The most packages that asked for a reboot PingPong keeps. */
     public const MAX_REBOOT_PACKAGES = 50;
+
+    /** The most pending updates sent by name. */
+    public const MAX_UPDATE_PACKAGES = 500;
+
+    /** How long `apt list --upgradable` may take before it is given up on. */
+    public const APT_TIMEOUT_SECONDS = 10;
+
+    /** How long the ECS task metadata endpoint may take; it answers locally. */
+    public const ECS_METADATA_TIMEOUT_SECONDS = 1;
+
+    /** The longest fleet name PingPong keeps. */
+    public const MAX_FLEET_LENGTH = 255;
+
+    /** The variable ECS sets in every container of a task (Fargate and EC2). */
+    public const ECS_METADATA_VARIABLE = 'ECS_CONTAINER_METADATA_URI_V4';
+
+    /** @var array<string, ?string> the fleet per metadata endpoint, asked once per process */
+    private static array $fleets = [];
 
     public const RUN_DIRECTORY = '/var/run';
 
@@ -536,6 +555,141 @@ class Host
         }
 
         return ['pending' => $pending, 'security' => $security];
+    }
+
+    /**
+     * When update-notifier last counted the updates, which apt does again
+     * whenever its lists or the installed packages change. Null where it
+     * does not run.
+     */
+    public function updatesStamp(): ?int
+    {
+        $stamp = @filemtime(self::UPDATES_AVAILABLE_FILE);
+
+        return $stamp === false ? null : $stamp;
+    }
+
+    /**
+     * The packages apt can upgrade, by name, with the version on offer and
+     * whether it comes from a security pocket. Asks `apt list --upgradable`
+     * without a shell, in the C locale, which reads apt's lists and needs no
+     * root. Null where apt is missing, on a system that is not like Debian,
+     * and when it fails or hangs.
+     *
+     * @return list<array{name: string, version: ?string, security: bool}>|null
+     */
+    public function upgradablePackages(): ?array
+    {
+        $binary = $this->executable('apt');
+
+        if ($binary === null || ! function_exists('proc_open') || ! $this->isDebianLike((string) $this->osRelease())) {
+            return null;
+        }
+
+        try {
+            $result = Process::timeout(self::APT_TIMEOUT_SECONDS)
+                ->env(['LC_ALL' => 'C'])
+                ->run([$binary, 'list', '--upgradable']);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($result->failed()) {
+            return null;
+        }
+
+        return $this->parseUpgradable($result->output());
+    }
+
+    /**
+     * Reads `apt list --upgradable`, one package per line such as
+     * `openssl/noble-updates,noble-security 3.0.13-0ubuntu3.5 amd64
+     * [upgradable from: 3.0.13-0ubuntu3.4]`. A package is a security update
+     * when one of its suites ends in `-security`. The "Listing..." header
+     * and apt's warning about its CLI are skipped. At most 500.
+     *
+     * @return list<array{name: string, version: ?string, security: bool}>
+     */
+    public function parseUpgradable(string $output): array
+    {
+        $packages = [];
+
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            if (preg_match('#^([a-z0-9][a-z0-9.+\-]*)/(\S+)\s+(\S+)#', trim($line), $match) !== 1) {
+                continue;
+            }
+
+            $suites = explode(',', $match[2]);
+
+            $packages[] = [
+                'name' => mb_substr($match[1], 0, 255),
+                'version' => mb_substr($match[3], 0, 255),
+                'security' => array_filter($suites, fn (string $suite): bool => str_ends_with($suite, '-security')) !== [],
+            ];
+
+            if (count($packages) === self::MAX_UPDATE_PACKAGES) {
+                break;
+            }
+        }
+
+        return $packages;
+    }
+
+    /**
+     * The stable name of the short-lived instances this one belongs to, so
+     * PingPong keeps them as one server: on ECS (Fargate or EC2) the cluster
+     * and the service of the task, `ecs:prod/web`, read from the task
+     * metadata endpoint ECS gives every container. Every task of a service
+     * gets a new hostname and machine id; the service stays. Null on a
+     * machine of its own, and when the endpoint does not answer. Asked once
+     * per process.
+     */
+    public function fleet(): ?string
+    {
+        $endpoint = getenv(self::ECS_METADATA_VARIABLE);
+
+        if (! is_string($endpoint) || $endpoint === '') {
+            return null;
+        }
+
+        if (array_key_exists($endpoint, self::$fleets)) {
+            return self::$fleets[$endpoint];
+        }
+
+        try {
+            $task = Http::timeout(self::ECS_METADATA_TIMEOUT_SECONDS)
+                ->connectTimeout(self::ECS_METADATA_TIMEOUT_SECONDS)
+                ->acceptJson()
+                ->get(rtrim($endpoint, '/').'/task')
+                ->json();
+        } catch (Throwable) {
+            $task = null;
+        }
+
+        return self::$fleets[$endpoint] = is_array($task) ? $this->parseEcsTask($task) : null;
+    }
+
+    /**
+     * `ecs:{cluster}/{service}` from a task metadata (v4) response: the
+     * cluster's name (its ARN's last part), and the service that started the
+     * task, else its task definition family (a task run by hand, or an ECS
+     * agent too old to name the service).
+     *
+     * @param  array<array-key, mixed>  $task
+     */
+    public function parseEcsTask(array $task): ?string
+    {
+        $cluster = is_string($task['Cluster'] ?? null) ? $task['Cluster'] : '';
+        $cluster = str_contains($cluster, '/') ? substr($cluster, (int) strrpos($cluster, '/') + 1) : $cluster;
+        $service = is_string($task['ServiceName'] ?? null) && $task['ServiceName'] !== '' ? $task['ServiceName'] : null;
+        $family = is_string($task['Family'] ?? null) && $task['Family'] !== '' ? $task['Family'] : null;
+        $group = $service ?? $family;
+
+        if ($cluster === '' || $group === null) {
+            return null;
+        }
+
+        return mb_substr("ecs:{$cluster}/{$group}", 0, self::MAX_FLEET_LENGTH);
     }
 
     public function cores(): ?int
