@@ -501,33 +501,33 @@ class Host
     /**
      * Reads the English text of `updates-available`, such as "14 updates can
      * be applied immediately." with "6 of these updates are standard security
-     * updates.", or before Ubuntu 22.04 "14 packages can be updated." with "6
-     * updates are security updates.". No security line means none. The ESM
-     * line ("5 additional security updates can be applied with ESM Apps.")
-     * counts updates that cannot be installed yet, so it is neither.
+     * updates.", on Ubuntu 20.04 "14 updates can be installed immediately.",
+     * or before that "14 packages can be updated." with "6 updates are
+     * security updates.". With Ubuntu Pro each source (ESM Infra, ESM Apps,
+     * standard) has a security line of its own, so they add up; no security
+     * line means none. A line about "additional" security updates counts
+     * updates that cannot be installed without Ubuntu Pro, so it is neither.
      *
      * @return array{pending: int, security: int}|null
      */
     public function parseUpdates(string $contents): ?array
     {
         $pending = null;
-        $security = null;
+        $security = 0;
 
         foreach (preg_split('/\R/', $contents) ?: [] as $line) {
-            if (preg_match('/^\D*(\d+)/', $line, $number) !== 1) {
+            if (preg_match('/^\D*(\d+)/', $line, $number) !== 1 || str_contains($line, 'additional')) {
                 continue;
             }
 
-            if (str_contains($line, 'can be applied') || str_contains($line, 'can be updated')) {
-                if ($pending === null && ! str_contains($line, 'security update')) {
-                    $pending = (int) $number[1];
-                }
+            if (preg_match('/can be (applied|installed|updated)/', $line) === 1) {
+                $pending ??= (int) $number[1];
 
                 continue;
             }
 
-            if ($security === null && str_contains($line, 'security update')) {
-                $security = (int) $number[1];
+            if (str_contains($line, 'security update')) {
+                $security += (int) $number[1];
             }
         }
 
@@ -535,7 +535,7 @@ class Host
             return null;
         }
 
-        return ['pending' => $pending, 'security' => $security ?? 0];
+        return ['pending' => $pending, 'security' => $security];
     }
 
     public function cores(): ?int

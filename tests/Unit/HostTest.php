@@ -396,6 +396,16 @@ it('parses the updates update-notifier counted', function (string $contents, arr
         1 update can be applied immediately.
         1 of these updates is a standard security update.
         TEXT, ['pending' => 1, 'security' => 1]],
+    'ubuntu 20.04' => ["0 updates can be installed immediately.\n0 of these updates are security updates.\n", ['pending' => 0, 'security' => 0]],
+    'ubuntu pro, one line per source' => [<<<'TEXT'
+
+        14 updates can be applied immediately.
+        3 of these updates are ESM Infra security updates.
+        2 of these updates are ESM Apps security updates.
+        1 of these updates is a standard security update.
+
+        TEXT, ['pending' => 14, 'security' => 6]],
+    'esm upsell before ubuntu 22.04' => ["4 packages can be updated.\n1 update is a security update.\n\nEnable UA Infra: ESM to receive 18 additional security updates.\n", ['pending' => 4, 'security' => 1]],
     'only the pending line' => ["\n3 updates can be applied immediately.\nTo see these additional updates run: apt list --upgradable\n", ['pending' => 3, 'security' => 0]],
     'only esm updates' => ["0 updates can be applied immediately.\n\n2 additional security updates can be applied with ESM Infra.\n", ['pending' => 0, 'security' => 0]],
 ]);
