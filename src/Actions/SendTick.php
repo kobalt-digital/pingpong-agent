@@ -3,6 +3,7 @@
 namespace KobaltDigital\PingPong\Actions;
 
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Date;
 use KobaltDigital\PingPong\DeliveredHashes;
 use KobaltDigital\PingPong\Delivery\Connectivity;
 use KobaltDigital\PingPong\Delivery\Outbox;
@@ -42,6 +43,7 @@ class SendTick
         $signals = $this->collectSignals->execute();
 
         $payload = [
+            'sent_at' => Date::now()->toIso8601String(),
             'tick_minutes' => $this->tickInterval->minutes,
             'schedule_hash' => $scheduleHash,
             'inventory_hash' => $inventoryHash,

@@ -15,6 +15,8 @@ class FakeHost extends Host
      * @param  array{user: int, nice: int, system: int, idle: int, iowait: int, irq: int, softirq: int, steal: int}|null  $cpuTimes
      * @param  array{cpu_some: ?float, memory_some: ?float, memory_full: ?float, io_some: ?float, io_full: ?float}|null  $pressure
      * @param  array{total: int, free: int}|null  $inodes
+     * @param  list<string>|null  $rebootPackages
+     * @param  array{pending: int, security: int}|null  $updates
      */
     public function __construct(
         private ?array $loadAverage = ['1m' => 0.81, '5m' => 0.62, '15m' => 0.55],
@@ -29,6 +31,10 @@ class FakeHost extends Host
         private ?string $machineId = '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
         private ?string $osName = 'Ubuntu 24.04.1 LTS',
         private ?string $kernel = '6.8.0-45-generic',
+        private ?int $uptime = 3542791,
+        private ?bool $rebootRequired = true,
+        private ?array $rebootPackages = ['linux-image-6.8.0-49-generic', 'libc6'],
+        private ?array $updates = ['pending' => 14, 'security' => 6],
     ) {}
 
     public function loadAverage(): ?array
@@ -74,6 +80,26 @@ class FakeHost extends Host
     public function kernel(): ?string
     {
         return $this->kernel;
+    }
+
+    public function uptime(): ?int
+    {
+        return $this->uptime;
+    }
+
+    public function rebootRequired(): ?bool
+    {
+        return $this->rebootRequired;
+    }
+
+    public function rebootPackages(): ?array
+    {
+        return $this->rebootPackages;
+    }
+
+    public function updates(): ?array
+    {
+        return $this->updates;
     }
 
     public function cores(): ?int

@@ -45,6 +45,7 @@ return [
         Signals\Memory::class,
         Signals\Cpu::class,
         Signals\Pressure::class,
+        Signals\HostState::class,
         Signals\AppState::class,
         Signals\Pm2::class,
         Signals\Flare::class,

@@ -17,6 +17,17 @@ class Host
     /** The longest operating system name or kernel release PingPong keeps. */
     public const MAX_NAME_LENGTH = 100;
 
+    /** The most packages that asked for a reboot PingPong keeps. */
+    public const MAX_REBOOT_PACKAGES = 50;
+
+    public const RUN_DIRECTORY = '/var/run';
+
+    public const REBOOT_REQUIRED_FILE = '/var/run/reboot-required';
+
+    public const REBOOT_PACKAGES_FILE = '/var/run/reboot-required.pkgs';
+
+    public const UPDATES_AVAILABLE_FILE = '/var/lib/update-notifier/updates-available';
+
     /** @return array{'1m': float, '5m': float, '15m': float}|null */
     public function loadAverage(): ?array
     {
@@ -358,6 +369,175 @@ class Host
         return $this->limited((string) @php_uname('r'));
     }
 
+    /** Whole seconds since the machine booted, null without `/proc/uptime`. */
+    public function uptime(): ?int
+    {
+        $contents = $this->read('/proc/uptime');
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseUptime($contents);
+    }
+
+    /** The first number of `/proc/uptime`, floored. */
+    public function parseUptime(string $contents): ?int
+    {
+        if (preg_match('/^\s*(\d+)(?:\.\d+)?(?:\s|$)/', $contents, $match) !== 1) {
+            return null;
+        }
+
+        return (int) $match[1];
+    }
+
+    /**
+     * Whether a package (a kernel, libc) asked for a reboot, as Debian and
+     * Ubuntu mark it. Other distributions have no such marker, so there it
+     * is null rather than false.
+     */
+    public function rebootRequired(): ?bool
+    {
+        $runDirectoryReadable = @is_dir(self::RUN_DIRECTORY) && @is_readable(self::RUN_DIRECTORY);
+
+        return $this->parseRebootRequired(
+            (string) $this->osRelease(),
+            $runDirectoryReadable,
+            $runDirectoryReadable && @file_exists(self::REBOOT_REQUIRED_FILE),
+        );
+    }
+
+    /**
+     * True when the marker exists, false when it does not but its directory
+     * can be read, null when that directory cannot be read or the system is
+     * not like Debian.
+     */
+    public function parseRebootRequired(string $osRelease, bool $runDirectoryReadable, bool $markerExists): ?bool
+    {
+        if (! $this->isDebianLike($osRelease) || ! $runDirectoryReadable) {
+            return null;
+        }
+
+        return $markerExists;
+    }
+
+    /**
+     * Whether the `ID` or `ID_LIKE` of an os-release file names Debian or
+     * Ubuntu, as on Raspbian, Mint and Pop!_OS.
+     */
+    public function isDebianLike(string $osRelease): bool
+    {
+        preg_match_all('/^(ID|ID_LIKE)=(.*)$/m', $osRelease, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $match) {
+            $ids = preg_split('/\s+/', strtolower(trim($match[2], " \t\r\"'")));
+
+            if (array_intersect($ids === false ? [] : $ids, ['debian', 'ubuntu']) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The packages that asked for the reboot. Null when no list exists.
+     *
+     * @return list<string>|null
+     */
+    public function rebootPackages(): ?array
+    {
+        $contents = $this->read(self::REBOOT_PACKAGES_FILE);
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseRebootPackages($contents);
+    }
+
+    /**
+     * One package per line, which apt repeats when it upgrades a package
+     * twice before the reboot: unique, each cut to 100 characters, at most 50.
+     *
+     * @return list<string>
+     */
+    public function parseRebootPackages(string $contents): array
+    {
+        $packages = [];
+
+        foreach (preg_split('/\R/', $contents) ?: [] as $line) {
+            $package = $this->limited($line);
+
+            if ($package !== null) {
+                $packages[$package] = true;
+            }
+
+            if (count($packages) === self::MAX_REBOOT_PACKAGES) {
+                break;
+            }
+        }
+
+        return array_map(strval(...), array_keys($packages));
+    }
+
+    /**
+     * The package updates Ubuntu's update-notifier counted. Null where it
+     * did not run, and when its text is in a language this cannot read.
+     *
+     * @return array{pending: int, security: int}|null
+     */
+    public function updates(): ?array
+    {
+        $contents = $this->read(self::UPDATES_AVAILABLE_FILE);
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseUpdates($contents);
+    }
+
+    /**
+     * Reads the English text of `updates-available`, such as "14 updates can
+     * be applied immediately." with "6 of these updates are standard security
+     * updates.", or before Ubuntu 22.04 "14 packages can be updated." with "6
+     * updates are security updates.". No security line means none. The ESM
+     * line ("5 additional security updates can be applied with ESM Apps.")
+     * counts updates that cannot be installed yet, so it is neither.
+     *
+     * @return array{pending: int, security: int}|null
+     */
+    public function parseUpdates(string $contents): ?array
+    {
+        $pending = null;
+        $security = null;
+
+        foreach (preg_split('/\R/', $contents) ?: [] as $line) {
+            if (preg_match('/^\D*(\d+)/', $line, $number) !== 1) {
+                continue;
+            }
+
+            if (str_contains($line, 'can be applied') || str_contains($line, 'can be updated')) {
+                if ($pending === null && ! str_contains($line, 'security update')) {
+                    $pending = (int) $number[1];
+                }
+
+                continue;
+            }
+
+            if ($security === null && str_contains($line, 'security update')) {
+                $security = (int) $number[1];
+            }
+        }
+
+        if ($pending === null) {
+            return null;
+        }
+
+        return ['pending' => $pending, 'security' => $security ?? 0];
+    }
+
     public function cores(): ?int
     {
         $contents = $this->read('/proc/cpuinfo');
@@ -451,6 +631,12 @@ class Host
         }
 
         return ! @is_dir('/proc');
+    }
+
+    /** The os-release file, which systemd looks for in these two places. */
+    private function osRelease(): ?string
+    {
+        return $this->read('/etc/os-release') ?? $this->read('/usr/lib/os-release');
     }
 
     /**

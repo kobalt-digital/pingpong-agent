@@ -63,6 +63,7 @@ return [
         Signals\Memory::class,
         Signals\Cpu::class,
         Signals\Pressure::class,
+        Signals\HostState::class,
         Signals\AppState::class,
         Signals\Pm2::class,
         Signals\Flare::class,
@@ -70,7 +71,7 @@ return [
 ];
 ```
 
-Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It must be the final `https` URL. The Agent still follows a redirect, but logs a warning naming the URL to set instead. Removing a class from `signals` stops the tick from sending that signal.
+Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It must be the final `https` URL. The Agent still follows a redirect, but logs a warning naming the URL to set instead. Removing a class from `signals` stops the tick from sending that signal. A published config keeps the list it was published with, so an app that published it before `Signals\Cpu`, `Signals\Pressure` and `Signals\HostState` existed sends none of them until it adds them to its `signals` list.
 
 The tick runs every minute. Set `PINGPONG_TICK_MINUTES` to tick less often on one environment, for example `5` on acceptance. The value must divide 60 (1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30); any other value logs a warning and ticks every minute. Each tick carries its interval, so PingPong can tell a slower environment from a late tick.
 
@@ -84,7 +85,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 **Handshake.** On the first boot with a key set, the Agent posts its version, the PHP version, the Laravel version, the OS family (`os`) and the number of CPU cores (`cores`) to PingPong. It sends from `app()->terminating()`, after the response has gone out, so no visitor waits on it. A deploy boots the app anyway (`package:discover`, `migrate`), so the handshake usually lands during the deploy. It is sent once per Agent version; upgrading the package sends a new one. A failed handshake is tried again ten minutes later.
 
-**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute (or every `PINGPONG_TICK_MINUTES`) in the foreground with `withoutOverlapping`, and posts a tick. The tick keeps running while the app is down for maintenance (`php artisan down`), and says so in `app.maintenance`. Queue workers pause while the app is down, so the canary of such a tick does not come back; PingPong should read `app.maintenance` before judging the canary. The tick proves the scheduler is alive and carries health signals measured on the server that sent it:
+**Tick.** `pingpong:ping` is added to the app's schedule by the package itself. It runs every minute (or every `PINGPONG_TICK_MINUTES`) in the foreground with `withoutOverlapping`, and posts a tick. The tick keeps running while the app is down for maintenance (`php artisan down`), and says so in `app.maintenance`. Queue workers pause while the app is down, so the canary of such a tick does not come back; PingPong should read `app.maintenance` before judging the canary. The tick carries when it was built (`sent_at`, by the app's clock), so PingPong can tell a server whose clock is off. It proves the scheduler is alive and carries health signals measured on the server that sent it:
 
 - **Database.** Whether the default connection connects, with a 2 second connect timeout, and answers a `select 1`, and how long the query took.
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
@@ -95,6 +96,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 - **Memory.** Total and available memory, swap in use, and since boot the OOM kills and pages swapped in and out.
 - **CPU.** CPU time since boot per state (user, system, idle, iowait, steal and so on), so PingPong can tell busy from waiting.
 - **Pressure.** How much of the last minute tasks waited on CPU, memory or IO (Linux pressure stall information). Left out on kernels without it.
+- **Host.** How long the machine has been up, whether it waits for a reboot and which packages asked for it (Debian and Ubuntu), and how many package updates and security updates wait (Ubuntu's update-notifier, read in English only). Left out where none of it can be read.
 - **App.** The app's environment (`APP_ENV`), and whether it is in maintenance or debug mode.
 - **PM2.** Every process PM2 runs for the scheduler's user, with its status, restarts, uptime and memory. Left out when PM2 is not installed. No PM2 command runs while no daemon does, so the Agent never starts one; the list is then empty. The environment PM2 keeps per process is never sent.
 - **Flare.** Whether an exception would reach Flare: which client is installed (`spatie/laravel-flare` or `spatie/laravel-ignition`), whether it has a key, whether reporting is on and the exception handler or log stack hands exceptions to it, and whether the Flare daemon answers when the app sends through it. Once an hour, and right away after the key changes, the Agent asks Flare whether it accepts the key by posting an empty report, which Flare drops without creating an error. Only the first 8 characters of a hash of the key are sent. Left out when no Flare client is installed.
@@ -103,7 +105,7 @@ These are raw numbers. PingPong decides what counts as a problem. A check that f
 
 The signals are cheap: a few syscalls, a few file reads, one `df -iP` with a 2 second timeout, a few small queries, one `pm2 jlist` on a server that runs PM2 and, once an hour on an app with Flare, an empty report to Flare with a 3 second timeout. The backlog count reads at most 10000 jobs, so a large backlog does not make it slower. The database signals share one connection to the default database, opened once per tick with a 2 second connect timeout that Laravel retries once. An unreachable default database costs the tick about 4 seconds, and no canary is dispatched to a `database` queue on it. Not bounded: a `select 1` that hangs after connecting, connections other than the default, and the cache signal and overlap lock when the cache store is `database`. Collecting them costs less than booting the scheduler that runs them.
 
-Inside a container, load, memory, CPU, pressure and cores describe the host machine, not the container's limits.
+Inside a container, load, memory, CPU, pressure, host and cores describe the host machine, not the container's limits.
 
 Every request carries the Agent key as a bearer token, the payload `schema`, the hostname of the sending server, its machine id (`/etc/machine-id`), its operating system (`PRETTY_NAME` from `/etc/os-release`) and its kernel release. Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried. The Agent remembers when requests stopped getting through and why (DNS, connect, timeout, TLS, a `5xx` or a `429`), in `storage/framework/pingpong-agent`, and the first tick that gets through tells PingPong. PingPong can then tell a server that lost its network from a task that went missing. A Check-in that does not get through is kept on disk (at most 500, none older than a day) and sent again, unchanged, right after the next tick that does. Every tick tells PingPong how many still wait.
 

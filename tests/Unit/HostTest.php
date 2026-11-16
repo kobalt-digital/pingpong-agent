@@ -294,3 +294,116 @@ function dfBinary(): ?string
 {
     return (new Host)->executable('df');
 }
+
+it('parses the uptime in whole seconds', function (string $contents, ?int $uptime) {
+    expect((new Host)->parseUptime($contents))->toBe($uptime);
+})->with([
+    'with fractions' => ["3542791.87 13987654.12\n", 3542791],
+    'just booted' => ["0.42 1.37\n", 0],
+    'whole seconds' => ['350 700', 350],
+    'empty' => ['', null],
+    'not a number' => ["uptime\n", null],
+]);
+
+it('reads the uptime of this machine or gives null', function () {
+    $uptime = (new Host)->uptime();
+
+    expect($uptime === null || $uptime >= 0)->toBeTrue();
+});
+
+it('tells whether a debian like system waits for a reboot', function (bool $markerExists) {
+    $osRelease = "PRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nID=ubuntu\nID_LIKE=debian\n";
+
+    expect((new Host)->parseRebootRequired($osRelease, true, $markerExists))->toBe($markerExists);
+})->with([
+    'marker present' => true,
+    'marker absent' => false,
+]);
+
+it('does not know about a reboot when /var/run cannot be read', function () {
+    expect((new Host)->parseRebootRequired("ID=debian\n", false, false))->toBeNull();
+});
+
+it('does not know about a reboot on a system unlike debian', function (string $osRelease) {
+    expect((new Host)->parseRebootRequired($osRelease, true, false))->toBeNull()
+        ->and((new Host)->parseRebootRequired($osRelease, true, true))->toBeNull();
+})->with([
+    'fedora' => "ID=fedora\nPRETTY_NAME=\"Fedora Linux 40\"\n",
+    'rocky, like rhel' => "ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n",
+    'no os-release (macOS)' => '',
+    'debian only in the name' => "NAME=\"Debian GNU/Linux\"\nID=notdebian\n",
+]);
+
+it('recognises systems like debian', function (string $osRelease) {
+    expect((new Host)->isDebianLike($osRelease))->toBeTrue();
+})->with([
+    'debian' => "ID=debian\n",
+    'ubuntu' => "ID=ubuntu\nID_LIKE=debian\n",
+    'mint, quoted list' => "ID=linuxmint\nID_LIKE=\"ubuntu debian\"\n",
+    'raspbian' => "ID=raspbian\nID_LIKE=debian\n",
+    'single quoted' => "ID='pop'\nID_LIKE='ubuntu debian'\n",
+]);
+
+it('lists the packages that asked for a reboot once each', function () {
+    $contents = "linux-image-6.8.0-49-generic\nlibc6\n  libc6  \n\nlinux-base\r\nlinux-image-6.8.0-49-generic\n";
+
+    expect((new Host)->parseRebootPackages($contents))->toBe(['linux-image-6.8.0-49-generic', 'libc6', 'linux-base']);
+});
+
+it('keeps at most 50 packages of at most 100 characters', function () {
+    $lines = array_map(fn (int $number): string => "package-{$number}", range(1, 80));
+    $lines[0] = str_repeat('a', 150);
+
+    $packages = (new Host)->parseRebootPackages(implode("\n", $lines));
+
+    expect($packages)->toHaveCount(Host::MAX_REBOOT_PACKAGES)
+        ->and($packages[0])->toBe(str_repeat('a', Host::MAX_NAME_LENGTH))
+        ->and($packages[49])->toBe('package-50');
+});
+
+it('counts packages that differ only past 100 characters once', function () {
+    $prefix = str_repeat('a', 100);
+
+    expect((new Host)->parseRebootPackages("{$prefix}-one\n{$prefix}-two\n"))->toBe([$prefix]);
+});
+
+it('gives an empty list for an empty package file', function () {
+    expect((new Host)->parseRebootPackages(''))->toBe([]);
+});
+
+it('parses the updates update-notifier counted', function (string $contents, array $updates) {
+    expect((new Host)->parseUpdates($contents))->toBe($updates);
+})->with([
+    'ubuntu 22.04 and later' => [<<<'TEXT'
+
+        Expanded Security Maintenance for Applications is not enabled.
+
+        14 updates can be applied immediately.
+        6 of these updates are standard security updates.
+        To see these additional updates run: apt list --upgradable
+
+        5 additional security updates can be applied with ESM Apps.
+        Learn more about enabling ESM Apps service at https://ubuntu.com/esm
+
+        TEXT, ['pending' => 14, 'security' => 6]],
+    'before ubuntu 22.04' => [<<<'TEXT'
+
+        14 packages can be updated.
+        6 updates are security updates.
+
+        TEXT, ['pending' => 14, 'security' => 6]],
+    'one of each' => [<<<'TEXT'
+        1 update can be applied immediately.
+        1 of these updates is a standard security update.
+        TEXT, ['pending' => 1, 'security' => 1]],
+    'only the pending line' => ["\n3 updates can be applied immediately.\nTo see these additional updates run: apt list --upgradable\n", ['pending' => 3, 'security' => 0]],
+    'only esm updates' => ["0 updates can be applied immediately.\n\n2 additional security updates can be applied with ESM Infra.\n", ['pending' => 0, 'security' => 0]],
+]);
+
+it('gives no update counts for text it cannot read', function (string $contents) {
+    expect((new Host)->parseUpdates($contents))->toBeNull();
+})->with([
+    'empty' => '',
+    'german' => "\n14 Aktualisierungen können sofort angewendet werden.\n6 dieser Aktualisierungen sind Standard-Sicherheitsaktualisierungen.\n",
+    'only a security line' => "6 updates are security updates.\n",
+]);
