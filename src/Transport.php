@@ -98,6 +98,8 @@ class Transport
                     'schema' => self::SCHEMA,
                     'server' => Server::name(),
                     'machine_id' => $this->host->machineId(),
+                    'os_name' => $this->host->osName(),
+                    'kernel' => $this->host->kernel(),
                     ...$payload,
                 ]);
         } catch (Throwable $exception) {

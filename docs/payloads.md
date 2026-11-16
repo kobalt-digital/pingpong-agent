@@ -13,6 +13,8 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 | `schema` | integer | Payload schema version, currently `1` |
 | `server` | string | Hostname of the sending server. All servers of a Monitor share one key, so this tells them apart |
 | `machine_id` | string or null | `/etc/machine-id`, else `/var/lib/dbus/machine-id`: 32 lowercase hex characters that identify the operating system installation, so apps on one machine can be grouped. `null` when neither holds one, for example on macOS or in a container without it |
+| `os_name` | string or null | `PRETTY_NAME` from `/etc/os-release`, else `/usr/lib/os-release`, unquoted and cut to 100 characters, such as `Ubuntu 24.04.1 LTS`. `null` when neither file can be read or names it, for example on macOS |
+| `kernel` | string or null | Release of the running kernel from `php_uname('r')`, cut to 100 characters, such as `6.8.0-45-generic`. `null` when it is empty or `php_uname` is disabled |
 
 ## Handshake
 
@@ -23,6 +25,8 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
     "schema": 1,
     "server": "web-01",
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
+    "os_name": "Ubuntu 24.04.1 LTS",
+    "kernel": "6.8.0-45-generic",
     "agent_version": "0.1.0",
     "php_version": "8.4.12",
     "laravel_version": "13.2.0",
@@ -48,6 +52,8 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
     "schema": 1,
     "server": "web-01",
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
+    "os_name": "Ubuntu 24.04.1 LTS",
+    "kernel": "6.8.0-45-generic",
     "tick_minutes": 1,
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "inventory_hash": "8e2b4d6f0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b",
@@ -407,6 +413,8 @@ The facts about the app are read every tick. Flare itself is asked about the key
     "schema": 1,
     "server": "worker-01",
     "machine_id": "a3e81f05c2d94b7e86f1d0c4b9a27e53",
+    "os_name": "Ubuntu 24.04.1 LTS",
+    "kernel": "6.8.0-45-generic",
     "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
     "dispatched_at": "2026-09-25T12:00:00.250Z",
     "dispatched_from": "web-01",
@@ -432,6 +440,8 @@ The facts about the app are read every tick. Flare itself is asked about the key
     "schema": 1,
     "server": "web-01",
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
+    "os_name": "Ubuntu 24.04.1 LTS",
+    "kernel": "6.8.0-45-generic",
     "slug": "backup-run-only-db",
     "signal": "start",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
@@ -454,6 +464,8 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
     "schema": 1,
     "server": "web-01",
     "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
+    "os_name": "Ubuntu 24.04.1 LTS",
+    "kernel": "6.8.0-45-generic",
     "slug": "backup-run-only-db",
     "signal": "fail",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",

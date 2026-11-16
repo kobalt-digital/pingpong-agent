@@ -35,6 +35,8 @@ it('posts the payload with the bearer key, schema and server to the production e
             'schema' => 1,
             'server' => gethostname(),
             'machine_id' => '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
+            'os_name' => 'Ubuntu 24.04.1 LTS',
+            'kernel' => '6.8.0-45-generic',
             'agent_version' => '0.1.0',
         ]);
 });
@@ -49,6 +51,20 @@ it('sends a machine id of null when the host has none', function () {
 
     Http::assertSent(fn (Request $request) => array_key_exists('machine_id', $request->data())
         && $request->data()['machine_id'] === null);
+});
+
+it('sends an os name and kernel of null when the host cannot tell', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    app()->instance(Host::class, new FakeHost(osName: null, kernel: null));
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/tick' => Http::response()]);
+
+    app(Transport::class)->send('api/agent/tick', []);
+
+    Http::assertSent(fn (Request $request) => array_key_exists('os_name', $request->data())
+        && $request->data()['os_name'] === null
+        && array_key_exists('kernel', $request->data())
+        && $request->data()['kernel'] === null);
 });
 
 it('posts to the configured endpoint', function () {
@@ -173,6 +189,8 @@ it('follows a redirected endpoint with the POST, body and key intact, and says w
             'schema' => 1,
             'server' => gethostname(),
             'machine_id' => '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
+            'os_name' => 'Ubuntu 24.04.1 LTS',
+            'kernel' => '6.8.0-45-generic',
             'agent_version' => '0.1.0',
         ]);
 

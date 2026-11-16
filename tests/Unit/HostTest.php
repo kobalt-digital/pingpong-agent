@@ -255,6 +255,41 @@ it('reads a machine id on this machine or gives null', function () {
     expect($machineId === null || preg_match('/^[0-9a-f]{32}$/', $machineId) === 1)->toBeTrue();
 });
 
+it('parses the os name', function (string $contents, string $osName) {
+    expect((new Host)->parseOsName($contents))->toBe($osName);
+})->with([
+    'double quoted' => ["NAME=\"Ubuntu\"\nPRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nVERSION_ID=\"24.04\"\n", 'Ubuntu 24.04.1 LTS'],
+    'single quoted' => ["PRETTY_NAME='Debian GNU/Linux 12 (bookworm)'\n", 'Debian GNU/Linux 12 (bookworm)'],
+    'bare' => ["ID=alpine\nPRETTY_NAME=Alpine\n", 'Alpine'],
+    'escaped quote' => ["PRETTY_NAME=\"Acme \\\"Edge\\\" 1.0\"\n", 'Acme "Edge" 1.0'],
+    'padded, with a carriage return' => ["PRETTY_NAME=\"  Rocky Linux 9.4 (Blue Onyx)  \"\r\n", 'Rocky Linux 9.4 (Blue Onyx)'],
+]);
+
+it('cuts the os name to 100 characters', function () {
+    $osName = (new Host)->parseOsName('PRETTY_NAME="'.str_repeat('a', 150).'"');
+
+    expect($osName)->toBe(str_repeat('a', Host::MAX_NAME_LENGTH));
+});
+
+it('gives no os name without a pretty name', function (string $contents) {
+    expect((new Host)->parseOsName($contents))->toBeNull();
+})->with([
+    'empty file' => '',
+    'missing PRETTY_NAME' => "NAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n",
+    'empty PRETTY_NAME' => "PRETTY_NAME=\"\"\n",
+    'only in a comment' => "# PRETTY_NAME=\"Ubuntu\"\n",
+]);
+
+it('reads the os name on this machine or gives null', function () {
+    $osName = (new Host)->osName();
+
+    expect($osName === null || ($osName !== '' && mb_strlen($osName) <= Host::MAX_NAME_LENGTH))->toBeTrue();
+});
+
+it('reads the kernel release of this machine', function () {
+    expect((new Host)->kernel())->toBe(php_uname('r') === '' ? null : mb_substr(php_uname('r'), 0, Host::MAX_NAME_LENGTH));
+});
+
 function dfBinary(): ?string
 {
     return (new Host)->executable('df');

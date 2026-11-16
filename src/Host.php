@@ -14,6 +14,9 @@ class Host
 {
     public const DF_TIMEOUT_SECONDS = 2;
 
+    /** The longest operating system name or kernel release PingPong keeps. */
+    public const MAX_NAME_LENGTH = 100;
+
     /** @return array{'1m': float, '5m': float, '15m': float}|null */
     public function loadAverage(): ?array
     {
@@ -304,6 +307,57 @@ class Host
         return $machineId;
     }
 
+    /**
+     * The name the distribution gives itself, such as "Ubuntu 24.04.1 LTS".
+     * Null where there is no os-release file (macOS) or it cannot be read.
+     */
+    public function osName(): ?string
+    {
+        foreach (['/etc/os-release', '/usr/lib/os-release'] as $path) {
+            $osName = $this->parseOsName((string) $this->read($path));
+
+            if ($osName !== null) {
+                return $osName;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The `PRETTY_NAME` of an os-release file, whose values follow shell
+     * quoting: in double or single quotes, or bare.
+     */
+    public function parseOsName(string $contents): ?string
+    {
+        if (preg_match('/^PRETTY_NAME=(.*)$/m', $contents, $match) !== 1) {
+            return null;
+        }
+
+        $value = trim($match[1]);
+
+        if (preg_match('/^"(.*)"$/', $value, $quoted) === 1) {
+            $value = (string) preg_replace('/\\\\(["\\\\$`])/', '$1', $quoted[1]);
+        } elseif (preg_match("/^'(.*)'$/", $value, $quoted) === 1) {
+            $value = $quoted[1];
+        }
+
+        return $this->limited($value);
+    }
+
+    /**
+     * The release of the running kernel, such as "6.8.0-45-generic". Null
+     * when `php_uname` is disabled.
+     */
+    public function kernel(): ?string
+    {
+        if (! function_exists('php_uname')) {
+            return null;
+        }
+
+        return $this->limited((string) @php_uname('r'));
+    }
+
     public function cores(): ?int
     {
         $contents = $this->read('/proc/cpuinfo');
@@ -372,6 +426,14 @@ class Host
             '5m' => $fiveMinutes,
             '15m' => $fifteenMinutes,
         ];
+    }
+
+    /** Trimmed and cut to what PingPong stores, null when nothing is left. */
+    private function limited(string $value): ?string
+    {
+        $value = trim(mb_substr(trim($value), 0, self::MAX_NAME_LENGTH));
+
+        return $value === '' ? null : $value;
     }
 
     /**

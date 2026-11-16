@@ -27,6 +27,8 @@ class FakeHost extends Host
         private ?array $pressure = ['cpu_some' => 4.11, 'memory_some' => 0.12, 'memory_full' => 0.03, 'io_some' => 1.27, 'io_full' => 0.84],
         private ?array $inodes = ['total' => 6553600, 'free' => 6141255],
         private ?string $machineId = '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
+        private ?string $osName = 'Ubuntu 24.04.1 LTS',
+        private ?string $kernel = '6.8.0-45-generic',
     ) {}
 
     public function loadAverage(): ?array
@@ -62,6 +64,16 @@ class FakeHost extends Host
     public function machineId(): ?string
     {
         return $this->machineId;
+    }
+
+    public function osName(): ?string
+    {
+        return $this->osName;
+    }
+
+    public function kernel(): ?string
+    {
+        return $this->kernel;
     }
 
     public function cores(): ?int
