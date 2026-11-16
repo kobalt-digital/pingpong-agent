@@ -14,6 +14,9 @@ class Cache implements Collector
 
     public const PROBE_SECONDS = 60;
 
+    /** How long Redis may take to answer INFO before the tick goes on without it. */
+    public const INFO_TIMEOUT_SECONDS = 1;
+
     public function __construct(private Repository $cache) {}
 
     public function name(): string
@@ -95,12 +98,38 @@ class Cache implements Collector
         }
 
         try {
-            $info = $store->connection()->info();
+            $info = self::boundedInfo($store->connection()->client());
         } catch (Throwable) {
             return null;
         }
 
         return is_array($info) ? self::redisFacts($info) : null;
+    }
+
+    /**
+     * INFO with a read timeout of its own, so a Redis that stops answering
+     * cannot hold up the tick: the connection's own timeout is put back
+     * after, since the app shares it. Only phpredis lets one call be bounded
+     * without touching the connection, so Predis sends no Redis facts.
+     *
+     * @return array<array-key, mixed>|null
+     */
+    public static function boundedInfo(mixed $client): ?array
+    {
+        if (! $client instanceof \Redis) {
+            return null;
+        }
+
+        $previous = $client->getOption(\Redis::OPT_READ_TIMEOUT);
+        $client->setOption(\Redis::OPT_READ_TIMEOUT, self::INFO_TIMEOUT_SECONDS);
+
+        try {
+            $info = $client->info();
+        } finally {
+            $client->setOption(\Redis::OPT_READ_TIMEOUT, $previous);
+        }
+
+        return is_array($info) ? $info : null;
     }
 
     /**

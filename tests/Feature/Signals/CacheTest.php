@@ -74,3 +74,17 @@ it('reads the Redis INFO fields from phpredis and from Predis alike', function (
         ]))->toBe($facts)
         ->and(Cache::redisFacts(['role' => 'master']))->toBeNull();
 });
+
+it('bounds INFO by a timeout of its own and gives the app its connection back as it was', function () {
+    $client = Mockery::mock(Redis::class);
+    $client->shouldReceive('getOption')->with(Redis::OPT_READ_TIMEOUT)->andReturn(0.0);
+    $client->shouldReceive('setOption')->once()->ordered()->with(Redis::OPT_READ_TIMEOUT, Cache::INFO_TIMEOUT_SECONDS)->andReturnTrue();
+    $client->shouldReceive('info')->once()->ordered()->andThrow(new RedisException('read error on connection'));
+    $client->shouldReceive('setOption')->once()->ordered()->with(Redis::OPT_READ_TIMEOUT, 0.0)->andReturnTrue();
+
+    expect(fn () => Cache::boundedInfo($client))->toThrow(RedisException::class);
+})->skip(! extension_loaded('redis'), 'phpredis is not installed');
+
+it('sends no Redis facts through a client it cannot bound', function () {
+    expect(Cache::boundedInfo(new stdClass))->toBeNull();
+});
