@@ -4,6 +4,8 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\Tests\Fakes\FakeHost;
 use KobaltDigital\PingPong\Transport;
 
 it('reports malformed transport configuration without sending', function (string $key) {
@@ -32,8 +34,21 @@ it('posts the payload with the bearer key, schema and server to the production e
         && $request->data() === [
             'schema' => 1,
             'server' => gethostname(),
+            'machine_id' => '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
             'agent_version' => '0.1.0',
         ]);
+});
+
+it('sends a machine id of null when the host has none', function () {
+    config()->set('pingpong-agent.key', 'pp_agent_test');
+    app()->instance(Host::class, new FakeHost(machineId: null));
+
+    Http::fake(['https://pingpong.kobaltdigital.nl/api/agent/tick' => Http::response()]);
+
+    app(Transport::class)->send('api/agent/tick', []);
+
+    Http::assertSent(fn (Request $request) => array_key_exists('machine_id', $request->data())
+        && $request->data()['machine_id'] === null);
 });
 
 it('posts to the configured endpoint', function () {
@@ -157,6 +172,7 @@ it('follows a redirected endpoint with the POST, body and key intact, and says w
         && $request->data() === [
             'schema' => 1,
             'server' => gethostname(),
+            'machine_id' => '4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b',
             'agent_version' => '0.1.0',
         ]);
 

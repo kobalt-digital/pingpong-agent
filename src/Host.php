@@ -2,6 +2,9 @@
 
 namespace KobaltDigital\PingPong;
 
+use Illuminate\Support\Facades\Process;
+use Throwable;
+
 /**
  * Reads operating system facts that only some platforms offer. Every method
  * answers null when this one does not, so callers never have to know whether
@@ -9,6 +12,8 @@ namespace KobaltDigital\PingPong;
  */
 class Host
 {
+    public const DF_TIMEOUT_SECONDS = 2;
+
     /** @return array{'1m': float, '5m': float, '15m': float}|null */
     public function loadAverage(): ?array
     {
@@ -79,6 +84,224 @@ class Host
             'available_bytes' => $kilobytes['MemAvailable'] * 1024,
             'swap_used_bytes' => ($kilobytes['SwapTotal'] - $kilobytes['SwapFree']) * 1024,
         ];
+    }
+
+    /** @return array{oom_kills: ?int, swap_in_pages: ?int, swap_out_pages: ?int}|null */
+    public function vmStat(): ?array
+    {
+        $contents = $this->read('/proc/vmstat');
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseVmStat($contents);
+    }
+
+    /**
+     * Counters since boot. A kernel that lacks one (`oom_kill` came in 4.13)
+     * leaves that one null.
+     *
+     * @return array{oom_kills: ?int, swap_in_pages: ?int, swap_out_pages: ?int}
+     */
+    public function parseVmStat(string $contents): array
+    {
+        preg_match_all('/^(\w+) (\d+)$/m', $contents, $matches, PREG_SET_ORDER);
+
+        $counters = [];
+
+        foreach ($matches as $match) {
+            $counters[$match[1]] = (int) $match[2];
+        }
+
+        return [
+            'oom_kills' => $counters['oom_kill'] ?? null,
+            'swap_in_pages' => $counters['pswpin'] ?? null,
+            'swap_out_pages' => $counters['pswpout'] ?? null,
+        ];
+    }
+
+    /** @return array{user: int, nice: int, system: int, idle: int, iowait: int, irq: int, softirq: int, steal: int}|null */
+    public function cpuTimes(): ?array
+    {
+        $contents = $this->read('/proc/stat');
+
+        if ($contents === null) {
+            return null;
+        }
+
+        return $this->parseCpuTimes($contents);
+    }
+
+    /**
+     * Jiffies since boot from the line that adds up every CPU, so PingPong
+     * takes the difference between two ticks.
+     *
+     * @return array{user: int, nice: int, system: int, idle: int, iowait: int, irq: int, softirq: int, steal: int}|null
+     */
+    public function parseCpuTimes(string $contents): ?array
+    {
+        if (preg_match('/^cpu +(\d+(?: +\d+){7,})/m', $contents, $match) !== 1) {
+            return null;
+        }
+
+        $values = array_map(intval(...), explode(' ', (string) preg_replace('/ +/', ' ', $match[1])));
+
+        return [
+            'user' => $values[0],
+            'nice' => $values[1],
+            'system' => $values[2],
+            'idle' => $values[3],
+            'iowait' => $values[4],
+            'irq' => $values[5],
+            'softirq' => $values[6],
+            'steal' => $values[7],
+        ];
+    }
+
+    /**
+     * The share of the last minute in which tasks waited on CPU, memory or
+     * IO. Null without `/proc/pressure` (a kernel before 4.20, or PSI
+     * switched off), and when none of it could be read.
+     *
+     * @return array{cpu_some: ?float, memory_some: ?float, memory_full: ?float, io_some: ?float, io_full: ?float}|null
+     */
+    public function pressure(): ?array
+    {
+        if (! @is_dir('/proc/pressure')) {
+            return null;
+        }
+
+        $cpu = $this->parsePressure((string) $this->read('/proc/pressure/cpu'));
+        $memory = $this->parsePressure((string) $this->read('/proc/pressure/memory'));
+        $io = $this->parsePressure((string) $this->read('/proc/pressure/io'));
+
+        $pressure = [
+            'cpu_some' => $cpu['some'] ?? null,
+            'memory_some' => $memory['some'] ?? null,
+            'memory_full' => $memory['full'] ?? null,
+            'io_some' => $io['some'] ?? null,
+            'io_full' => $io['full'] ?? null,
+        ];
+
+        if (array_filter($pressure, fn (?float $value): bool => $value !== null) === []) {
+            return null;
+        }
+
+        return $pressure;
+    }
+
+    /**
+     * The `avg60` of each line of a `/proc/pressure` file.
+     *
+     * @return array<'some'|'full', float>
+     */
+    public function parsePressure(string $contents): array
+    {
+        preg_match_all('/^(some|full) .*\bavg60=(\d+(?:\.\d+)?)\b/m', $contents, $matches, PREG_SET_ORDER);
+
+        $pressure = [];
+
+        foreach ($matches as $match) {
+            $pressure[$match[1]] = (float) $match[2];
+        }
+
+        return $pressure;
+    }
+
+    /**
+     * Inodes of the filesystem that holds the path. PHP has no statvfs, so
+     * this asks `df`, without a shell, in the C locale so its header is not
+     * translated. Null without `df` or `proc_open`, when it fails or hangs,
+     * and when the filesystem keeps no inode count (btrfs reports 0).
+     *
+     * @return array{total: int, free: int}|null
+     */
+    public function inodes(string $path): ?array
+    {
+        $binary = $this->executable('df');
+
+        if ($binary === null || ! function_exists('proc_open')) {
+            return null;
+        }
+
+        try {
+            $result = Process::timeout(self::DF_TIMEOUT_SECONDS)
+                ->env(['LC_ALL' => 'C'])
+                ->run([$binary, '-iP', $path]);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($result->failed()) {
+            return null;
+        }
+
+        return $this->parseInodes($result->output());
+    }
+
+    /**
+     * Reads the output of `df -iP`. The header must name the columns, since
+     * a `df` that prints blocks first (macOS) would otherwise pass for one.
+     *
+     * @return array{total: int, free: int}|null
+     */
+    public function parseInodes(string $output): ?array
+    {
+        $lines = preg_split('/\R/', trim($output));
+
+        if ($lines === false || count($lines) < 2) {
+            return null;
+        }
+
+        $header = preg_split('/\s+/', trim($lines[0]));
+
+        if ($header === false
+            || strcasecmp($header[1] ?? '', 'Inodes') !== 0
+            || ! in_array(strtolower($header[3] ?? ''), ['ifree', 'free', 'available'], true)) {
+            return null;
+        }
+
+        if (preg_match('/^.*?\s+(\d+|-)\s+(\d+|-)\s+(\d+|-)\s+(\d+%|-)(?:\s|$)/', $lines[1], $match) !== 1) {
+            return null;
+        }
+
+        [, $total, , $free] = $match;
+
+        if (! ctype_digit($total) || (int) $total === 0 || ! ctype_digit($free)) {
+            return null;
+        }
+
+        return ['total' => (int) $total, 'free' => (int) $free];
+    }
+
+    /**
+     * The id systemd or D-Bus gave this installation of the operating
+     * system. Unlike the hostname it stays when the machine is renamed, and
+     * two machines with one name still differ.
+     */
+    public function machineId(): ?string
+    {
+        foreach (['/etc/machine-id', '/var/lib/dbus/machine-id'] as $path) {
+            $machineId = $this->parseMachineId((string) $this->read($path));
+
+            if ($machineId !== null) {
+                return $machineId;
+            }
+        }
+
+        return null;
+    }
+
+    public function parseMachineId(string $contents): ?string
+    {
+        $machineId = strtolower(trim($contents));
+
+        if (preg_match('/^[0-9a-f]{32}$/', $machineId) !== 1) {
+            return null;
+        }
+
+        return $machineId;
     }
 
     public function cores(): ?int

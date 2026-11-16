@@ -4,13 +4,17 @@ namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Foundation\Application;
 use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Host;
 use Throwable;
 
 class Disk implements Collector
 {
     use CollectsFacts;
 
-    public function __construct(private Application $app) {}
+    public function __construct(
+        private Application $app,
+        private Host $host,
+    ) {}
 
     public function name(): string
     {
@@ -21,6 +25,8 @@ class Disk implements Collector
      * @return array{
      *     free_bytes: ?int,
      *     total_bytes: ?int,
+     *     inodes_total: ?int,
+     *     inodes_free: ?int,
      *     error: ?string
      * }
      */
@@ -39,9 +45,13 @@ class Disk implements Collector
             return $this->unreadable("The disk space of {$path} could not be read.");
         }
 
+        $inodes = $this->host->inodes($path);
+
         return [
             'free_bytes' => (int) $freeBytes,
             'total_bytes' => (int) $totalBytes,
+            'inodes_total' => $inodes['total'] ?? null,
+            'inodes_free' => $inodes['free'] ?? null,
             'error' => null,
         ];
     }
@@ -50,6 +60,8 @@ class Disk implements Collector
      * @return array{
      *     free_bytes: null,
      *     total_bytes: null,
+     *     inodes_total: null,
+     *     inodes_free: null,
      *     error: string
      * }
      */
@@ -58,6 +70,8 @@ class Disk implements Collector
         return [
             'free_bytes' => null,
             'total_bytes' => null,
+            'inodes_total' => null,
+            'inodes_free' => null,
             'error' => $this->error($message),
         ];
     }

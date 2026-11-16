@@ -43,6 +43,8 @@ return [
         Signals\Queue::class,
         Signals\Load::class,
         Signals\Memory::class,
+        Signals\Cpu::class,
+        Signals\Pressure::class,
         Signals\AppState::class,
         Signals\Pm2::class,
         Signals\Flare::class,

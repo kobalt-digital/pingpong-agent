@@ -1,6 +1,7 @@
 {
     "schema": 1,
     "server": "web-01",
+    "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "tick_minutes": 1,
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "inventory_hash": "8e2b4d6f0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b",
@@ -18,6 +19,8 @@
         "disk": {
             "free_bytes": 52613349376,
             "total_bytes": 105226698752,
+            "inodes_total": 6553600,
+            "inodes_free": 6141255,
             "error": null
         },
         "failed_jobs": {
@@ -43,7 +46,27 @@
         "memory": {
             "total_bytes": 8244207616,
             "available_bytes": 1310720000,
-            "swap_used_bytes": 0
+            "swap_used_bytes": 0,
+            "oom_kills": 2,
+            "swap_in_pages": 1843,
+            "swap_out_pages": 5120
+        },
+        "cpu": {
+            "user": 15595036,
+            "nice": 4132,
+            "system": 8155061,
+            "idle": 341748387,
+            "iowait": 347222,
+            "irq": 0,
+            "softirq": 1950356,
+            "steal": 1013901
+        },
+        "pressure": {
+            "cpu_some": 4.11,
+            "memory_some": 0.0,
+            "memory_full": 0.0,
+            "io_some": 1.27,
+            "io_full": 0.84
         },
         "app": {
             "env": "production",

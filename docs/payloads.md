@@ -12,6 +12,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 |---|---|---|
 | `schema` | integer | Payload schema version, currently `1` |
 | `server` | string | Hostname of the sending server. All servers of a Monitor share one key, so this tells them apart |
+| `machine_id` | string or null | `/etc/machine-id`, else `/var/lib/dbus/machine-id`: 32 lowercase hex characters that identify the operating system installation, so apps on one machine can be grouped. `null` when neither holds one, for example on macOS or in a container without it |
 
 ## Handshake
 
@@ -21,6 +22,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 {
     "schema": 1,
     "server": "web-01",
+    "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "agent_version": "0.1.0",
     "php_version": "8.4.12",
     "laravel_version": "13.2.0",
@@ -45,6 +47,7 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 {
     "schema": 1,
     "server": "web-01",
+    "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "tick_minutes": 1,
     "schedule_hash": "3f1c9a0e5b7d2c4f8a6e1b0d9c7f5a3e2d4b6c8a0f1e3d5c7b9a2e4f6d8c0b1a",
     "inventory_hash": "8e2b4d6f0a1c3e5b7d9f2a4c6e8b0d1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b",
@@ -62,6 +65,8 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
         "disk": {
             "free_bytes": 52613349376,
             "total_bytes": 105226698752,
+            "inodes_total": 6553600,
+            "inodes_free": 6141255,
             "error": null
         },
         "failed_jobs": {
@@ -87,7 +92,27 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
         "memory": {
             "total_bytes": 8244207616,
             "available_bytes": 1310720000,
-            "swap_used_bytes": 0
+            "swap_used_bytes": 0,
+            "oom_kills": 2,
+            "swap_in_pages": 1843,
+            "swap_out_pages": 5120
+        },
+        "cpu": {
+            "user": 15595036,
+            "nice": 4132,
+            "system": 8155061,
+            "idle": 341748387,
+            "iowait": 347222,
+            "irq": 0,
+            "softirq": 1950356,
+            "steal": 1013901
+        },
+        "pressure": {
+            "cpu_some": 4.11,
+            "memory_some": 0.0,
+            "memory_full": 0.0,
+            "io_some": 1.27,
+            "io_full": 0.84
         },
         "app": {
             "env": "production",
@@ -172,10 +197,10 @@ Every payload carries `schema`, an integer. PingPong accepts the current and the
 Every signal is a raw fact measured on the sending server: bytes, seconds and counts, never percentages. The Agent never decides whether a value is bad; PingPong owns the thresholds. Signals follow one of three conventions:
 
 - **Checks** (`database`, `cache`, `disk`, `failed_jobs`, `queue`) are always present. A check that fails reports its own failure in the signal, with `error` holding the message (at most 255 characters). An `error` of `null` means the check worked.
-- **Platform facts** (`load`, `memory`, and the backlog keys of `queue`) are left out when the platform does not provide them. A missing one means unknown, never a problem. They carry no `error`.
+- **Platform facts** (`load`, `memory`, `cpu`, `pressure`, and the backlog keys of `queue`) are left out when the platform does not provide them. A missing one means unknown, never a problem. They carry no `error`.
 - **Optional checks** (`pm2`, `flare`) are left out when the server lacks the tool they read, which means unknown. When it is there, they behave like a check.
 
-`app` is always present. An app can also remove a signal from its `signals` config, and then that signal is missing too. A count that stops at a cap means that number or more. Inside a container, `load`, `memory` and the handshake's `cores` describe the host machine, not the container's limits.
+`app` is always present. An app can also remove a signal from its `signals` config, and then that signal is missing too. A count that stops at a cap means that number or more. Inside a container, `load`, `memory`, `cpu`, `pressure` and the handshake's `cores` describe the host machine, not the container's limits.
 
 ### `tasks`
 
@@ -248,6 +273,8 @@ The disk that holds the app's base path.
 |---|---|---|
 | `free_bytes` | integer or null | Free space in bytes. `null` when it could not be read |
 | `total_bytes` | integer or null | Size of the disk in bytes. `null` when it could not be read |
+| `inodes_total` | integer or null | Inodes of the filesystem, from `df -iP`. `null` when `df` cannot run or the filesystem keeps no inode count (btrfs) |
+| `inodes_free` | integer or null | Free inodes of the filesystem, read like `inodes_total` |
 | `error` | string or null | Why the disk space could not be read |
 
 ### `signals.failed_jobs`
@@ -299,6 +326,29 @@ Read from `/proc/meminfo`. Left out when that file cannot be read, for example o
 | `total_bytes` | integer | `MemTotal` |
 | `available_bytes` | integer | `MemAvailable`, what new processes can use without swapping |
 | `swap_used_bytes` | integer | `SwapTotal` minus `SwapFree` |
+| `oom_kills` | integer or null | `oom_kill` from `/proc/vmstat`: processes the kernel killed for want of memory since boot. `null` when it cannot be read |
+| `swap_in_pages` | integer or null | `pswpin` from `/proc/vmstat`: pages swapped in since boot |
+| `swap_out_pages` | integer or null | `pswpout` from `/proc/vmstat`: pages swapped out since boot |
+
+### `signals.cpu`
+
+CPU time since boot in jiffies, from the `cpu` line of `/proc/stat`, which adds up every processor. PingPong takes the difference between two ticks of the same server. Left out when that file cannot be read.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `user`, `nice`, `system`, `idle`, `iowait`, `irq`, `softirq`, `steal` | integer | Time spent in that state |
+
+### `signals.pressure`
+
+Pressure stall information: the `avg60` of `/proc/pressure/cpu`, `memory` and `io`, the percentage (0 to 100) of the last 60 seconds in which tasks waited on that resource. `some` means at least one task waited, `full` that all of them did. Left out when `/proc/pressure` does not exist (a kernel before 4.20, or PSI switched off). A whole number such as `0` arrives without a fraction.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `cpu_some` | float or null | Some tasks waited on CPU |
+| `memory_some` | float or null | Some tasks waited on memory |
+| `memory_full` | float or null | All tasks waited on memory |
+| `io_some` | float or null | Some tasks waited on IO |
+| `io_full` | float or null | All tasks waited on IO |
 
 ### `signals.app`
 
@@ -356,6 +406,7 @@ The facts about the app are read every tick. Flare itself is asked about the key
 {
     "schema": 1,
     "server": "worker-01",
+    "machine_id": "a3e81f05c2d94b7e86f1d0c4b9a27e53",
     "canary_id": "9b1f5e0c-3f4e-4a53-9a57-7f1f2c7e8d10",
     "dispatched_at": "2026-09-25T12:00:00.250Z",
     "dispatched_from": "web-01",
@@ -380,6 +431,7 @@ The facts about the app are read every tick. Flare itself is asked about the key
 {
     "schema": 1,
     "server": "web-01",
+    "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "slug": "backup-run-only-db",
     "signal": "start",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
@@ -401,6 +453,7 @@ A failed run (`tests/Fixtures/schema-1/check-in-fail.json`):
 {
     "schema": 1,
     "server": "web-01",
+    "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "slug": "backup-run-only-db",
     "signal": "fail",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",

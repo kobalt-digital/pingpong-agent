@@ -61,6 +61,8 @@ return [
         Signals\Queue::class,
         Signals\Load::class,
         Signals\Memory::class,
+        Signals\Cpu::class,
+        Signals\Pressure::class,
         Signals\AppState::class,
         Signals\Pm2::class,
         Signals\Flare::class,
@@ -86,22 +88,24 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 - **Database.** Whether the default connection connects, with a 2 second connect timeout, and answers a `select 1`, and how long the query took.
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
-- **Disk.** Free and total bytes of the disk that holds the app.
+- **Disk.** Free and total bytes, and total and free inodes, of the disk that holds the app.
 - **Failed jobs.** How many jobs landed in the `failed_jobs` table since the previous tick.
 - **Queue.** Unless the default queue runs jobs without a worker (`sync`, `deferred`, `background`, `null`), every tick dispatches a small canary job to it. The worker that runs the canary reports it back to PingPong, so PingPong knows the workers are alive and how long a job waited. This is the only report that goes through the queue. On the `database` driver the tick also counts how many jobs wait per queue and how long the oldest due one has waited.
 - **Load.** The system load average over 1, 5 and 15 minutes.
-- **Memory.** Total and available memory, and swap in use.
+- **Memory.** Total and available memory, swap in use, and since boot the OOM kills and pages swapped in and out.
+- **CPU.** CPU time since boot per state (user, system, idle, iowait, steal and so on), so PingPong can tell busy from waiting.
+- **Pressure.** How much of the last minute tasks waited on CPU, memory or IO (Linux pressure stall information). Left out on kernels without it.
 - **App.** The app's environment (`APP_ENV`), and whether it is in maintenance or debug mode.
 - **PM2.** Every process PM2 runs for the scheduler's user, with its status, restarts, uptime and memory. Left out when PM2 is not installed. No PM2 command runs while no daemon does, so the Agent never starts one; the list is then empty. The environment PM2 keeps per process is never sent.
 - **Flare.** Whether an exception would reach Flare: which client is installed (`spatie/laravel-flare` or `spatie/laravel-ignition`), whether it has a key, whether reporting is on and the exception handler or log stack hands exceptions to it, and whether the Flare daemon answers when the app sends through it. Once an hour, and right away after the key changes, the Agent asks Flare whether it accepts the key by posting an empty report, which Flare drops without creating an error. Only the first 8 characters of a hash of the key are sent. Left out when no Flare client is installed.
 
 These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app. A signal the server cannot provide (memory on macOS, queue backlog on Redis) is simply left out.
 
-The signals are cheap: a few syscalls, one file read, a few small queries, one `pm2 jlist` on a server that runs PM2 and, once an hour on an app with Flare, an empty report to Flare with a 3 second timeout. The backlog count reads at most 10000 jobs, so a large backlog does not make it slower. The database signals share one connection to the default database, opened once per tick with a 2 second connect timeout that Laravel retries once. An unreachable default database costs the tick about 4 seconds, and no canary is dispatched to a `database` queue on it. Not bounded: a `select 1` that hangs after connecting, connections other than the default, and the cache signal and overlap lock when the cache store is `database`. Collecting them costs less than booting the scheduler that runs them.
+The signals are cheap: a few syscalls, a few file reads, one `df -iP` with a 2 second timeout, a few small queries, one `pm2 jlist` on a server that runs PM2 and, once an hour on an app with Flare, an empty report to Flare with a 3 second timeout. The backlog count reads at most 10000 jobs, so a large backlog does not make it slower. The database signals share one connection to the default database, opened once per tick with a 2 second connect timeout that Laravel retries once. An unreachable default database costs the tick about 4 seconds, and no canary is dispatched to a `database` queue on it. Not bounded: a `select 1` that hangs after connecting, connections other than the default, and the cache signal and overlap lock when the cache store is `database`. Collecting them costs less than booting the scheduler that runs them.
 
-Inside a container, load, memory and cores describe the host machine, not the container's limits.
+Inside a container, load, memory, CPU, pressure and cores describe the host machine, not the container's limits.
 
-Every request carries the Agent key as a bearer token, the payload `schema` and the hostname of the sending server. Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried. The Agent remembers when requests stopped getting through and why (DNS, connect, timeout, TLS, a `5xx` or a `429`), in `storage/framework/pingpong-agent`, and the first tick that gets through tells PingPong. PingPong can then tell a server that lost its network from a task that went missing. A Check-in that does not get through is kept on disk (at most 500, none older than a day) and sent again, unchanged, right after the next tick that does. Every tick tells PingPong how many still wait.
+Every request carries the Agent key as a bearer token, the payload `schema`, the hostname of the sending server and its machine id (`/etc/machine-id`). Requests time out after 5 seconds. When PingPong is down, slow or answers with an error, the Agent logs a warning and carries on; it never throws into the app. A `429` means PingPong asked the Agent to slow down, so that tick is skipped rather than retried. The Agent remembers when requests stopped getting through and why (DNS, connect, timeout, TLS, a `5xx` or a `429`), in `storage/framework/pingpong-agent`, and the first tick that gets through tells PingPong. PingPong can then tell a server that lost its network from a task that went missing. A Check-in that does not get through is kept on disk (at most 500, none older than a day) and sent again, unchanged, right after the next tick that does. Every tick tells PingPong how many still wait.
 
 **Check-ins.** Every scheduled task the app defines checks in with PingPong when it starts and when it succeeds, fails or is skipped, straight from the scheduler process. PingPong learns the task's cron expression and timezone from the Check-in, so there is nothing to set up per task. A tick carries a hash of the schedule, and the full task list whenever that hash changes or PingPong asks for it again, so a task removed from the code can be archived in PingPong.
 

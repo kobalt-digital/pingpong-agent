@@ -1,6 +1,7 @@
 {
     "schema": 1,
     "server": "web-01",
+    "machine_id": "4f9c2b7e1a8d4e6f9b3c5a7d2e1f0c8b",
     "slug": "backup-run-only-db",
     "signal": "start",
     "run_id": "0d6f0f4e-6a0e-4c8e-8f59-3c1f4f0f2a61",
