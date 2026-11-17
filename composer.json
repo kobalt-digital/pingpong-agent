@@ -48,7 +48,8 @@
     "autoload-dev": {
         "psr-4": {
             "KobaltDigital\\PingPong\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "Workbench\\App\\": "workbench/app/",
+            "KobaltDigital\\PingPong\\Machine\\": "machine/src/"
         }
     },
     "scripts": {

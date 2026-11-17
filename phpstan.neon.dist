@@ -3,6 +3,12 @@ parameters:
     paths:
         - src
         - config
+        - machine/src
+        - machine/bin/pingpong-machine
+        - machine/build.php
     tmpDir: build/phpstan
     configDirectories:
         - config
+        - machine/src
+        - machine/bin/pingpong-machine
+        - machine/build.php

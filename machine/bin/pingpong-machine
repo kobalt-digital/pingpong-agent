@@ -1,0 +1,105 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * The machine agent of PingPong: reads a machine's load, memory, disk and
+ * processes and the size of its sites, and sends them to PingPong.
+ *
+ *   pingpong-machine tick         read and send, from cron every minute
+ *   pingpong-machine sites        measure the sites now
+ *   pingpong-machine self-update  replace this phar with the newest one
+ *   pingpong-machine version
+ */
+
+use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\Machine\Agent;
+use KobaltDigital\PingPong\Machine\Client;
+use KobaltDigital\PingPong\Machine\Config;
+use KobaltDigital\PingPong\Machine\ProcessReport;
+use KobaltDigital\PingPong\Machine\ProcessTable;
+use KobaltDigital\PingPong\Machine\Runner;
+use KobaltDigital\PingPong\Machine\SiteSizes;
+use KobaltDigital\PingPong\Machine\State;
+use KobaltDigital\PingPong\Machine\Updater;
+use KobaltDigital\PingPong\Machine\Users;
+use KobaltDigital\PingPong\Machine\Vitals;
+
+if (version_compare(PHP_VERSION, '8.2.0', '<')) {
+    fwrite(STDERR, "pingpong-machine needs PHP 8.2 or newer.\n");
+    exit(1);
+}
+
+/* Inside the phar the stub registers the autoloader; run from a checkout,
+   Composer's does. */
+if (! class_exists(Agent::class)) {
+    require dirname(__DIR__, 2).'/vendor/autoload.php';
+}
+
+$command = $argv[1] ?? 'help';
+
+if ($command === 'version') {
+    echo Agent::VERSION, "\n";
+    exit(0);
+}
+
+if ($command === 'self-update') {
+    $phar = Phar::running(false);
+
+    if ($phar === '') {
+        fwrite(STDERR, "self-update only works from the phar.\n");
+        exit(1);
+    }
+
+    $outcome = (new Updater)->update($phar);
+    echo $outcome, "\n";
+    exit(in_array($outcome, ['updated', 'current'], true) ? 0 : 1);
+}
+
+if (! in_array($command, ['tick', 'sites'], true)) {
+    fwrite(STDERR, "Usage: pingpong-machine tick|sites|self-update|version\n");
+    exit($command === 'help' ? 0 : 1);
+}
+
+try {
+    $config = Config::load();
+} catch (RuntimeException $exception) {
+    fwrite(STDERR, $exception->getMessage()."\n");
+    exit(1);
+}
+
+$runner = new Runner;
+$users = new Users;
+$agent = new Agent(
+    $config,
+    new Client($config, 'pingpong-machine/'.Agent::VERSION),
+    new State($config->stateDirectory),
+    new Vitals(new Host, $runner),
+    new ProcessTable,
+    new ProcessReport($users),
+    new SiteSizes($runner, $users),
+    $runner,
+    $users,
+);
+
+if ($command === 'sites') {
+    $sent = $agent->sites();
+    echo match ($sent) {
+        true => "Sent the sizes of the sites.\n",
+        false => "Measured the sites, but PingPong did not take them.\n",
+        null => "Another run is measuring the sites, or du is missing.\n",
+    };
+    exit($sent === false ? 1 : 0);
+}
+
+$tick = $agent->tick();
+
+if (! $tick['sent']) {
+    fwrite(STDERR, "PingPong did not take the tick.\n");
+    exit(1);
+}
+
+if ($agent->sitesDue($tick['measure_sites'], $tick['busy'])) {
+    $agent->sites();
+}
+
+exit(0);

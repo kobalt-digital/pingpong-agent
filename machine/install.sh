@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+#
+# Installs the machine agent of PingPong, or updates its key.
+#
+#   curl -fsSL https://raw.githubusercontent.com/kobalt-digital/pingpong-agent/main/machine/install.sh \
+#     | sudo bash -s -- --url https://pingpong.example --key pp_machine_...
+#
+# As root (a Forge server) it installs for the whole machine: a system user
+# pingpong-machine runs it from cron every minute, and a copy of du that may
+# read every home directory measures the sites. Without root (shared hosting)
+# it installs for you alone, in your home directory and your crontab.
+#
+# The key can also come from PINGPONG_KEY, so it stays out of your shell
+# history.
+
+set -euo pipefail
+
+BASE="${PINGPONG_DIST:-https://raw.githubusercontent.com/kobalt-digital/pingpong-agent/main/machine/dist}"
+URL="${PINGPONG_URL:-}"
+KEY="${PINGPONG_KEY:-}"
+PHP="${PINGPONG_PHP:-}"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --url) URL="$2"; shift 2 ;;
+        --key) KEY="$2"; shift 2 ;;
+        --php) PHP="$2"; shift 2 ;;
+        *) echo "Unknown option $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -z "$URL" ] || [ -z "$KEY" ]; then
+    echo "Usage: install.sh --url https://pingpong.example --key pp_machine_..." >&2
+    exit 1
+fi
+
+PHP="${PHP:-$(command -v php || true)}"
+
+if [ -z "$PHP" ] || ! "$PHP" -r 'exit(PHP_VERSION_ID >= 80200 ? 0 : 1);'; then
+    echo "The machine agent needs PHP 8.2 or newer on the command line. Pass --php /path/to/php." >&2
+    exit 1
+fi
+
+download() {
+    if command -v curl >/dev/null; then
+        curl -fsSL "$1" -o "$2"
+    else
+        wget -qO "$2" "$1"
+    fi
+}
+
+# Downloads the phar into the given directory and checks it against its checksum.
+fetch_phar() {
+    local directory="$1" temporary
+    temporary="$(mktemp -d)"
+    download "$BASE/pingpong-machine.phar" "$temporary/pingpong-machine.phar"
+    download "$BASE/pingpong-machine.phar.sha256" "$temporary/pingpong-machine.phar.sha256"
+    (cd "$temporary" && sha256sum -c --quiet pingpong-machine.phar.sha256)
+    install -m 0755 "$temporary/pingpong-machine.phar" "$directory/pingpong-machine.phar"
+    rm -rf "$temporary"
+}
+
+# Writes the config as JSON, with PHP so the key needs no escaping by hand.
+write_config() {
+    PINGPONG_URL="$URL" PINGPONG_KEY="$KEY" "$PHP" -r '
+        echo json_encode(array_filter([
+            "url" => getenv("PINGPONG_URL"),
+            "key" => getenv("PINGPONG_KEY"),
+            "state_dir" => $argv[1] !== "" ? $argv[1] : null,
+        ]), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n";
+    ' "${2:-}" > "$1"
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+    LIBRARY=/usr/local/lib/pingpong-machine
+    CONFIG=/etc/pingpong-machine
+    STATE=/var/lib/pingpong-machine
+
+    id pingpong-machine >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$STATE" --shell /usr/sbin/nologin pingpong-machine
+
+    install -d -m 0755 "$LIBRARY"
+    install -d -m 0750 -g pingpong-machine "$CONFIG"
+    install -d -m 0750 -o pingpong-machine -g pingpong-machine "$STATE"
+
+    fetch_phar "$LIBRARY"
+
+    write_config "$CONFIG/config.json"
+    chown root:pingpong-machine "$CONFIG/config.json"
+    chmod 0640 "$CONFIG/config.json"
+
+    # A du that may read every folder, and nothing else, so the agent can
+    # measure home directories closed to others without running as root.
+    install -m 0750 -g pingpong-machine "$(command -v du)" "$LIBRARY/du"
+
+    if command -v setcap >/dev/null; then
+        setcap cap_dac_read_search+ep "$LIBRARY/du"
+    else
+        echo "setcap is missing (apt install libcap2-bin): sites in home directories closed to others are not measured." >&2
+    fi
+
+    MINUTE=$((RANDOM % 60))
+    cat > /etc/cron.d/pingpong-machine <<CRON
+# The machine agent of PingPong: https://github.com/kobalt-digital/pingpong-agent
+* * * * * pingpong-machine $PHP $LIBRARY/pingpong-machine.phar tick >/dev/null 2>&1
+$MINUTE 4 * * * root $PHP $LIBRARY/pingpong-machine.phar self-update >/dev/null 2>&1
+CRON
+    chmod 0644 /etc/cron.d/pingpong-machine
+
+    echo "Installed for the whole machine. Sending the first tick..."
+    runuser -u pingpong-machine -- "$PHP" "$LIBRARY/pingpong-machine.phar" tick && echo "PingPong took it."
+else
+    LIBRARY="$HOME/.local/lib/pingpong-machine"
+    CONFIG="$HOME/.config/pingpong-machine"
+
+    install -d -m 0700 "$LIBRARY" "$CONFIG"
+
+    fetch_phar "$LIBRARY"
+
+    (umask 077 && write_config "$CONFIG/config.json")
+
+    MINUTE=$((RANDOM % 60))
+    { crontab -l 2>/dev/null | grep -v 'pingpong-machine.phar' || true
+      echo "* * * * * $PHP $LIBRARY/pingpong-machine.phar tick >/dev/null 2>&1"
+      echo "$MINUTE 4 * * * $PHP $LIBRARY/pingpong-machine.phar self-update >/dev/null 2>&1"
+    } | crontab -
+
+    echo "Installed for $(id -un). Sending the first tick..."
+    "$PHP" "$LIBRARY/pingpong-machine.phar" tick && echo "PingPong took it."
+fi
