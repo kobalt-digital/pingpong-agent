@@ -5,6 +5,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Actions\CollectSignals;
 use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
+use KobaltDigital\PingPong\Host;
 
 it('reports invalid signal configuration without breaking the tick', function () {
     config()->set('pingpong-agent.signals', 'invalid');
@@ -33,6 +35,33 @@ it('reports an invalid container binding without losing other signals', function
 
     Log::shouldHaveReceived('warning')->once();
 });
+
+it('leaves the machine out on a machine of its own, where the machine agent reads it', function () {
+    config()->set('pingpong-agent.signals', [AlwaysOne::class, MachineLoad::class]);
+
+    expect(withEnv([Host::ECS_METADATA_VARIABLE => null], fn () => app(CollectSignals::class)->execute()))
+        ->toBe(['one' => ['value' => 1]]);
+});
+
+it('still reads the machine inside an ECS task, which cannot run the machine agent', function () {
+    config()->set('pingpong-agent.signals', [AlwaysOne::class, MachineLoad::class]);
+
+    expect(withEnv([Host::ECS_METADATA_VARIABLE => 'http://169.254.170.2/v4/abc'], fn () => app(CollectSignals::class)->execute()))
+        ->toBe(['one' => ['value' => 1], 'load' => ['1m' => 0.5]]);
+});
+
+class MachineLoad implements MachineSignal
+{
+    public function name(): string
+    {
+        return 'load';
+    }
+
+    public function collect(): ?array
+    {
+        return ['1m' => 0.5];
+    }
+}
 
 class AlwaysOne implements Collector
 {

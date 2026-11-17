@@ -2,14 +2,14 @@
 
 namespace KobaltDigital\PingPong\Signals;
 
-use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
 use KobaltDigital\PingPong\Host;
 
 /**
  * CPU time since boot, in jiffies. PingPong takes the difference between two
  * ticks of the same server.
  */
-class Cpu implements Collector
+class Cpu implements MachineSignal
 {
     public function __construct(private Host $host) {}
 

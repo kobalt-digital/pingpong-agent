@@ -670,6 +670,17 @@ class Host
     }
 
     /**
+     * Whether this runs inside an ECS task (Fargate or EC2), which sets the
+     * metadata endpoint in every container. Unlike `fleet()` it asks nothing.
+     */
+    public function inFleet(): bool
+    {
+        $endpoint = getenv(self::ECS_METADATA_VARIABLE);
+
+        return is_string($endpoint) && $endpoint !== '';
+    }
+
+    /**
      * `ecs:{cluster}/{service}` from a task metadata (v4) response: the
      * cluster's name (its ARN's last part), and the service that started the
      * task, else its task definition family (a task run by hand, or an ECS

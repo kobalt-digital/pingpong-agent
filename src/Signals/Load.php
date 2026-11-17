@@ -2,10 +2,10 @@
 
 namespace KobaltDigital\PingPong\Signals;
 
-use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
 use KobaltDigital\PingPong\Host;
 
-class Load implements Collector
+class Load implements MachineSignal
 {
     public function __construct(private Host $host) {}
 

@@ -42,7 +42,14 @@ class FakeHost extends Host
         ],
         private ?string $fleet = null,
         private ?int $updatesStamp = 1763328600,
+        private ?bool $inFleet = null,
     ) {}
+
+    /** As set, else as the real one: by the ECS variable. */
+    public function inFleet(): bool
+    {
+        return $this->inFleet ?? ($this->fleet !== null || parent::inFleet());
+    }
 
     public function upgradablePackages(): ?array
     {

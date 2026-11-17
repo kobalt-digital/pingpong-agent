@@ -3,11 +3,11 @@
 namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Foundation\Application;
-use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
 use KobaltDigital\PingPong\Host;
 use Throwable;
 
-class Disk implements Collector
+class Disk implements MachineSignal
 {
     use CollectsFacts;
 

@@ -89,14 +89,15 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
 
 - **Database.** Whether the default connection connects, with a 2 second connect timeout, and answers a `select 1`, and how long the query took.
 - **Cache.** Whether the default cache store writes, reads and removes a probe key, and how long that took.
-- **Disk.** Free and total bytes, and total and free inodes, of the disk that holds the app.
 - **Failed jobs.** How many jobs landed in the `failed_jobs` table since the previous tick.
 - **Queue.** Unless the default queue runs jobs without a worker (`sync`, `deferred`, `background`, `null`), every tick dispatches a small canary job to it. The worker that runs the canary reports it back to PingPong, so PingPong knows the workers are alive and how long a job waited. This is the only report that goes through the queue. On the `database` driver the tick also counts how many jobs wait per queue and how long the oldest due one has waited.
-- **Load.** The system load average over 1, 5 and 15 minutes.
-- **Memory.** Total and available memory, swap in use, and since boot the OOM kills and pages swapped in and out.
-- **CPU.** CPU time since boot per state (user, system, idle, iowait, steal and so on), so PingPong can tell busy from waiting.
-- **Pressure.** How much of the last minute tasks waited on CPU, memory or IO (Linux pressure stall information). Left out on kernels without it.
-- **Host.** How long the machine has been up, whether it waits for a reboot and which packages asked for it (Debian and Ubuntu), and how many package updates and security updates wait (Ubuntu's update-notifier, read in English only). Left out where none of it can be read.
+- **The machine, inside an ECS task only.** Load, memory, CPU, pressure, the disk and the host facts below describe the machine, not the app, so on a machine of its own the [machine agent](machine/README.md) sends them, once for every app on it, and this Agent leaves them out. A container of an ECS task cannot run the machine agent, so there (where `ECS_CONTAINER_METADATA_URI_V4` is set) the tick still carries them:
+  - **Load.** The system load average over 1, 5 and 15 minutes.
+  - **Memory.** Total and available memory, swap in use, and since boot the OOM kills and pages swapped in and out.
+  - **CPU.** CPU time since boot per state (user, system, idle, iowait, steal and so on), so PingPong can tell busy from waiting.
+  - **Pressure.** How much of the last minute tasks waited on CPU, memory or IO (Linux pressure stall information). Left out on kernels without it.
+  - **Disk.** Free and total bytes, and total and free inodes, of the disk that holds the app.
+  - **Host.** How long the machine has been up, whether it waits for a reboot and which packages asked for it (Debian and Ubuntu), and how many package updates and security updates wait (Ubuntu's update-notifier, read in English only). Left out where none of it can be read.
 - **App.** The app's environment (`APP_ENV`), and whether it is in maintenance or debug mode.
 - **PM2.** Every process PM2 runs for the scheduler's user, with its status, restarts, uptime and memory. Left out when PM2 is not installed. No PM2 command runs while no daemon does, so the Agent never starts one; the list is then empty. The environment PM2 keeps per process is never sent.
 - **Flare.** Whether an exception would reach Flare: which client is installed (`spatie/laravel-flare` or `spatie/laravel-ignition`), whether it has a key, whether reporting is on and the exception handler or log stack hands exceptions to it, and whether the Flare daemon answers when the app sends through it. Once an hour, and right away after the key changes, the Agent asks Flare whether it accepts the key by posting an empty report, which Flare drops without creating an error. Only the first 8 characters of a hash of the key are sent. Left out when no Flare client is installed.
