@@ -90,13 +90,15 @@ it('measures the sites under a root, largest first, with their owner', function 
 
     $measured = siteSizes()->sites([$root], $du);
 
+    $bytes = array_column($measured['entries'], 'bytes', 'path');
+
     expect($measured['complete'])->toBeTrue()
         ->and($measured['unmeasured'])->toBe([])
-        ->and(array_column($measured['entries'], 'bytes', 'path'))->toBe([
-            "{$root}/forge" => 1300 * 1024,
-            "{$root}/forge/example.nl" => 1200 * 1024,
-            "{$root}/forge/example.nl/storage/logs" => 300 * 1024,
-        ])
+        ->and(array_keys($bytes))->toBe(["{$root}/forge", "{$root}/forge/example.nl", "{$root}/forge/example.nl/storage/logs"])
+        ->and($bytes["{$root}/forge/example.nl"])->toBe(1200 * 1024)
+        ->and($bytes["{$root}/forge/example.nl/storage/logs"])->toBe(300 * 1024)
+        /* The home directory is what is in it: its one site, plus its own entry. */
+        ->and($bytes["{$root}/forge"])->toBeGreaterThanOrEqual(1200 * 1024)->toBeLessThan(1300 * 1024)
         ->and(array_unique(array_column($measured['entries'], 'owner')))->toBe([(new Users)->name((int) fileowner($root))]);
 });
 
@@ -118,6 +120,35 @@ it('loses only the folder du ran out of time on', function () {
     expect($measured['complete'])->toBeFalse()
         ->and($measured['unmeasured'])->toBe(["{$root}/big"])
         ->and(array_column($measured['entries'], 'path'))->toBe(["{$root}/small", "{$root}/big/a"]);
+});
+
+it('keeps every other site of a home directory when one is too big to count in time', function () {
+    $root = siteRoot(['kylian/.worktrees', 'kylian/shop.nl', 'kylian/blog.nl']);
+
+    $runner = new class extends Runner
+    {
+        public function run(array $command, int $timeoutSeconds, ?callable $onLine = null, string $separator = "\n"): ?array
+        {
+            return parent::run($command, 1, $onLine, $separator);
+        }
+    };
+
+    $du = fakeDu(implode("\n", [
+        "4000\t{$root}/kylian/.worktrees/a",
+        "500\t{$root}/kylian/shop.nl",
+        "300\t{$root}/kylian/blog.nl",
+    ])."\n", slowFolder: "{$root}/kylian/.worktrees");
+
+    $measured = (new SiteSizes($runner, new Users))->sites([$root], $du);
+    $bytes = array_column($measured['entries'], 'bytes', 'path');
+
+    /* The home directory is at least its sites that finished: PingPong
+       reads it as unmeasured, so as a lower bound. */
+    expect($measured['complete'])->toBeFalse()
+        ->and($measured['unmeasured'])->toBe(["{$root}/kylian/.worktrees", "{$root}/kylian"])
+        ->and($bytes["{$root}/kylian/shop.nl"])->toBe(500 * 1024)
+        ->and($bytes["{$root}/kylian/blog.nl"])->toBe(300 * 1024)
+        ->and($bytes["{$root}/kylian"])->toBeGreaterThanOrEqual(800 * 1024)->toBeLessThan(4000 * 1024);
 });
 
 it('leaves the folders it has no time left for unmeasured', function () {
