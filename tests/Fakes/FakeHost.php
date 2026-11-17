@@ -18,6 +18,9 @@ class FakeHost extends Host
      * @param  list<string>|null  $rebootPackages
      * @param  array{pending: int, security: int}|null  $updates
      * @param  list<array{name: string, version: ?string, security: bool}>|null  $updatePackages
+     * @param  array<string, bool>  $sockets  Whether each socket is writable, by path
+     * @param  array<string, string>  $files  Contents by path
+     * @param  array<string, string>  $realpaths  Resolved path by path
      */
     public function __construct(
         private ?array $loadAverage = ['1m' => 0.81, '5m' => 0.62, '15m' => 0.55],
@@ -43,6 +46,9 @@ class FakeHost extends Host
         private ?string $fleet = null,
         private ?int $updatesStamp = 1763328600,
         private ?bool $inFleet = null,
+        private array $sockets = [],
+        private array $files = [],
+        private array $realpaths = [],
     ) {}
 
     /** As set, else as the real one: by the ECS variable. */
@@ -153,5 +159,32 @@ class FakeHost extends Host
     public function pidFileRuns(string $path): bool
     {
         return in_array($path, $this->livePidFiles, true);
+    }
+
+    public function socketWritable(string $path): ?bool
+    {
+        return $this->sockets[$path] ?? null;
+    }
+
+    public function contents(string $path): ?string
+    {
+        return $this->files[$path] ?? null;
+    }
+
+    public function files(string $pattern): array
+    {
+        $matches = array_values(array_filter(
+            array_keys($this->files),
+            fn (string $path): bool => fnmatch($pattern, $path, FNM_PATHNAME),
+        ));
+
+        sort($matches);
+
+        return $matches;
+    }
+
+    public function realpath(string $path): ?string
+    {
+        return $this->realpaths[$path] ?? null;
     }
 }
