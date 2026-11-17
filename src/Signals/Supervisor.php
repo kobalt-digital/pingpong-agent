@@ -126,7 +126,7 @@ class Supervisor implements Collector
                 'own' => $own,
                 'command' => $command,
                 'display_name' => $own === true ? $this->displayName($command, $forgeId) : null,
-                'display_id' => $own === true ? $forgeId : null,
+                'display_id' => $own === true && $forgeId !== null && strlen($forgeId) <= self::MAX_LENGTH ? $forgeId : null,
             ];
         }
 

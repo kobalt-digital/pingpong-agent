@@ -204,6 +204,19 @@ it('sends what an own daemon runs and counts the daemons of other sites', functi
     ]);
 });
 
+it('omits an oversized Forge display identifier', function () {
+    $name = 'daemon-1:daemon-1_'.str_repeat('0', 254);
+    supervisorStatus($name.'   RUNNING   pid 101, uptime 0:10:00');
+
+    $process = supervisorSignal(files: [
+        '/etc/supervisor/conf.d/daemon-1.conf' => forgeDaemon('daemon-1', SUPERVISOR_SITE),
+    ])->collect()['processes'][0];
+
+    expect($process['name'])->toHaveLength(255)
+        ->and($process['display_name'])->toBe('Queue worker')
+        ->and($process['display_id'])->toBeNull();
+});
+
 it('knows a daemon runs from the app', function (string $basePath, string $directory, array $realpaths = []) {
     app()->setBasePath($basePath);
 
