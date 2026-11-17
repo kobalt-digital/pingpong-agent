@@ -43,7 +43,7 @@ class Supervisor implements Collector
      * way, so it is told without spawning `supervisorctl`, which is a
      * Python start.
      *
-     * @return array{processes: list<array{name: string, status: string, uptime_seconds: ?int, own: ?bool, command: ?string}>|null, others: ?int, error: ?string}|null
+     * @return array{processes: list<array{name: string, status: string, uptime_seconds: ?int, own: ?bool, command: ?string, display_name: ?string, display_id: ?string}>|null, others: ?int, error: ?string}|null
      */
     public function collect(): ?array
     {
@@ -94,7 +94,7 @@ class Supervisor implements Collector
 
     /**
      * @param  list<array{name: string, status: string, description: string}>  $lines
-     * @return array{processes: list<array{name: string, status: string, uptime_seconds: ?int, own: ?bool, command: ?string}>, others: int, error: null}
+     * @return array{processes: list<array{name: string, status: string, uptime_seconds: ?int, own: ?bool, command: ?string, display_name: ?string, display_id: ?string}>, others: int, error: null}
      */
     private function processes(array $lines): array
     {
@@ -114,12 +114,19 @@ class Supervisor implements Collector
                 continue;
             }
 
+            $command = $own === true ? $this->command($program['command'] ?? null) : null;
+            $forgeId = preg_match('/^daemon-(\d+):daemon-\1_(\d+)$/', $line['name'], $parts) === 1
+                ? "#{$parts[1]}/{$parts[2]}"
+                : null;
+
             $processes[] = [
                 'name' => mb_substr($line['name'], 0, self::MAX_LENGTH),
                 'status' => $line['status'],
                 'uptime_seconds' => $line['status'] === 'RUNNING' ? $this->uptime($line['description']) : null,
                 'own' => $own,
-                'command' => $own === true ? $this->command($program['command'] ?? null) : null,
+                'command' => $command,
+                'display_name' => $own === true ? $this->displayName($command, $forgeId) : null,
+                'display_id' => $own === true ? $forgeId : null,
             ];
         }
 
@@ -231,6 +238,20 @@ class Supervisor implements Collector
         }
 
         return [$basePath, $match[1], "{$match[1]}/current"];
+    }
+
+    /** Name the role from the configured command without publishing its arguments. */
+    private function displayName(?string $command, ?string $forgeId): ?string
+    {
+        return match (strtok($command ?? '', ' ')) {
+            'horizon' => 'Laravel Horizon',
+            'queue:work', 'queue:listen' => 'Queue worker',
+            'reverb:start' => 'Laravel Reverb',
+            'schedule:work' => 'Laravel Scheduler',
+            'octane:start' => 'Laravel Octane',
+            'inertia:start-ssr' => 'Inertia SSR',
+            default => $forgeId === null ? null : 'Supervisor daemon',
+        };
     }
 
     /**

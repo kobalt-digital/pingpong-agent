@@ -196,8 +196,8 @@ it('sends what an own daemon runs and counts the daemons of other sites', functi
 
     expect($signal)->toBe([
         'processes' => [
-            ['name' => 'daemon-1:daemon-1_00', 'status' => 'RUNNING', 'uptime_seconds' => 93784, 'own' => true, 'command' => 'queue:work redis --sleep=3 --tries=3'],
-            ['name' => 'ssr', 'status' => 'RUNNING', 'uptime_seconds' => 600, 'own' => true, 'command' => 'node'],
+            ['name' => 'daemon-1:daemon-1_00', 'status' => 'RUNNING', 'uptime_seconds' => 93784, 'own' => true, 'command' => 'queue:work redis --sleep=3 --tries=3', 'display_name' => 'Queue worker', 'display_id' => '#1/00'],
+            ['name' => 'ssr', 'status' => 'RUNNING', 'uptime_seconds' => 600, 'own' => true, 'command' => 'node', 'display_name' => null, 'display_id' => null],
         ],
         'others' => 2,
         'error' => null,
