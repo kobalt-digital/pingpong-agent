@@ -14,13 +14,18 @@ task, which cannot run this).
 
 ## Installing
 
-Make a machine key in PingPong (Settings, Machine agent). The page shows the
-line to run, which comes down to:
+On the server's page in PingPong, make its machine key: the page shows the
+line to run on that machine, with the key in it. The installer comes from
+PingPong itself and already knows its address:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kobalt-digital/pingpong-agent/main/machine/install.sh \
-  | sudo PINGPONG_KEY=pp_machine_... bash -s -- --url https://pingpong.kobaltdigital.nl
+curl -fsSL https://pingpong.kobaltdigital.nl/server/install.sh | sudo PINGPONG_KEY=pp_machine_... bash
 ```
+
+That script runs `install.sh` from this directory with `PINGPONG_URL` set,
+so running `install.sh` straight from GitHub with `--url` does the same.
+The key belongs to that one server: PingPong files everything the agent
+sends under it.
 
 **As root** (a Forge server) it installs for the whole machine:
 
@@ -40,8 +45,9 @@ of `du` with the one capability to read every folder
 **Without root** (shared hosting) it installs for you alone, in
 `~/.local/lib/pingpong-machine`, `~/.config/pingpong-machine` and your crontab.
 It then sees only your own processes (when `/proc` hides the others) and
-measures only your home directory. Every user of a shared host can install one;
-PingPong keeps them apart by Unix user under one server.
+measures only your home directory. Every user of a shared host can install one
+with the server's key; PingPong keeps them apart by Unix user under that
+server.
 
 Running the installer again replaces the key and the phar.
 

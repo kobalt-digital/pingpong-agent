@@ -68,22 +68,61 @@ class Agent
             $this->state->set('processes', $built['snapshot']);
         }
 
+        $gap = $this->state->get('unreachable');
+
         $response = $this->client->post('api/machine/tick', [
             ...$this->envelope($now),
             'signals' => array_filter($signals, fn (mixed $signal): bool => $signal !== null),
             'host' => $this->vitals->host($this->state),
             'processes' => $processes,
+            'connectivity' => is_array($gap) ? $gap : null,
         ]);
 
-        $this->state->save();
-
         $sent = $response !== null && $response['status'] >= 200 && $response['status'] < 300;
+        $this->rememberReach($response, $now);
+        $this->state->save();
 
         return [
             'sent' => $sent,
             'measure_sites' => $sent && ($response['body']['measure_sites'] ?? false) === true,
             'busy' => $this->busy($signals),
         ];
+    }
+
+    /**
+     * Keeps how long PingPong could not be reached and why, so the first
+     * tick that gets through can say so: PingPong then tells a machine that
+     * lost its network from one that was gone. A tick PingPong refused (a
+     * revoked key, a payload it could not read) did reach it, so it is no
+     * gap; a 5xx or a 429 is.
+     *
+     * @param  array{status: int, body: array<array-key, mixed>}|null  $response
+     */
+    private function rememberReach(?array $response, float $now): void
+    {
+        $status = $response['status'] ?? 0;
+        $error = match (true) {
+            $response === null => $this->client->lastError ?? 'other',
+            $status >= 500 => 'http_5xx',
+            $status === 429 => 'rate_limited',
+            default => null,
+        };
+
+        if ($error === null) {
+            $this->state->set('unreachable', null);
+
+            return;
+        }
+
+        $gap = $this->state->get('unreachable');
+        $at = gmdate('Y-m-d\TH:i:s\Z', (int) $now);
+
+        $this->state->set('unreachable', [
+            'unreachable_since' => is_array($gap) && is_string($gap['unreachable_since'] ?? null) ? $gap['unreachable_since'] : $at,
+            'unreachable_until' => $at,
+            'failed_attempts' => (is_array($gap) && is_int($gap['failed_attempts'] ?? null) ? $gap['failed_attempts'] : 0) + 1,
+            'last_error' => $error,
+        ]);
     }
 
     /**
@@ -194,6 +233,10 @@ class Agent
      */
     public function roots(): array
     {
+        if ($this->config->roots !== null) {
+            return $this->config->roots;
+        }
+
         if (! $this->config->system) {
             return [Config::home()];
         }

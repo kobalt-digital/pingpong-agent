@@ -2,8 +2,10 @@
 #
 # Installs the machine agent of PingPong, or updates its key.
 #
-#   curl -fsSL https://raw.githubusercontent.com/kobalt-digital/pingpong-agent/main/machine/install.sh \
-#     | sudo bash -s -- --url https://pingpong.example --key pp_machine_...
+#   curl -fsSL https://pingpong.example/server/install.sh | sudo PINGPONG_KEY=pp_machine_... bash
+#
+# PingPong serves a short script that sets PINGPONG_URL and runs this one.
+# Run straight from GitHub, pass --url and --key yourself.
 #
 # As root (a Forge server) it installs for the whole machine: a system user
 # pingpong-machine runs it from cron every minute, and a copy of du that may

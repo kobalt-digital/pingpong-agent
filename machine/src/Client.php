@@ -11,6 +11,9 @@ class Client
 {
     public const TIMEOUT_SECONDS = 10;
 
+    /** Why the last request did not get through: dns, connect, timeout, tls or other. Null when it did. */
+    public ?string $lastError = null;
+
     public function __construct(private Config $config, private string $userAgent, private bool $useCurl = true) {}
 
     /**
@@ -33,6 +36,7 @@ class Client
             'User-Agent: '.$this->userAgent,
         ];
 
+        $this->lastError = null;
         $answer = $this->useCurl && function_exists('curl_init') ? $this->withCurl($url, $headers, $json) : $this->withStream($url, $headers, $json);
 
         if ($answer === null) {
@@ -67,10 +71,31 @@ class Client
         $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
 
         if (! is_string($body) || $status === 0) {
+            $this->lastError = $this->curlError(curl_errno($curl), curl_error($curl));
+
             return null;
         }
 
         return [$status, $body];
+    }
+
+    /**
+     * As the Laravel agent names it: a resolver that gives up is reported by
+     * cURL as a timeout (28), so the message tells it apart.
+     */
+    private function curlError(int $number, string $message): string
+    {
+        if (str_contains($message, 'Resolving timed out')) {
+            return 'dns';
+        }
+
+        return match ($number) {
+            6 => 'dns',
+            7 => 'connect',
+            28 => 'timeout',
+            35, 51, 58, 60 => 'tls',
+            default => 'other',
+        };
     }
 
     /**
@@ -91,6 +116,8 @@ class Client
         $handle = @fopen($url, 'r', false, $context);
 
         if ($handle === false) {
+            $this->lastError = 'other';
+
             return null;
         }
 

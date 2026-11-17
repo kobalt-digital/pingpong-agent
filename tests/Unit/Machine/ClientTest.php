@@ -89,11 +89,12 @@ it('never follows a redirect with the key', function (bool $useCurl) {
     'stream' => [false],
 ]);
 
-it('gives nothing when PingPong cannot be reached', function (bool $useCurl) {
+it('gives nothing when PingPong cannot be reached, and says why', function (bool $useCurl, string $error) {
     $client = new Client(new Config('http://127.0.0.1:1', 'k', sys_get_temp_dir()), 'pingpong-machine/test', $useCurl);
 
-    expect($client->post('api/machine/tick', []))->toBeNull();
+    expect($client->post('api/machine/tick', []))->toBeNull()
+        ->and($client->lastError)->toBe($error);
 })->with([
-    'curl' => [true],
-    'stream' => [false],
+    'curl' => [true, 'connect'],
+    'stream' => [false, 'other'],
 ]);

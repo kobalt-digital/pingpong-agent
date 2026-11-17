@@ -27,6 +27,12 @@ class RecordingClient extends Client
     {
         $this->posts[] = ['path' => $path, 'payload' => $payload];
 
+        if ($this->status === 0) {
+            $this->lastError = 'dns';
+
+            return null;
+        }
+
         return ['status' => $this->status, 'body' => $this->body];
     }
 }
@@ -148,4 +154,33 @@ it('never measures the sites twice at once', function () {
         ->and($client->posts)->toBe([]);
 
     flock($lock, LOCK_UN);
+});
+
+it('tells PingPong in the first tick that gets through how long it could not reach it, and why', function () {
+    $state = stateDirectory();
+
+    machineAgent(new RecordingClient(0), $state)->tick(1000.0);
+    machineAgent(new RecordingClient(503), $state)->tick(1060.0);
+
+    $client = new RecordingClient;
+    machineAgent($client, $state)->tick(1120.0);
+    machineAgent($client, $state)->tick(1180.0);
+
+    expect($client->posts[0]['payload']['connectivity'])->toBe([
+        'unreachable_since' => '1970-01-01T00:16:40Z',
+        'unreachable_until' => '1970-01-01T00:17:40Z',
+        'failed_attempts' => 2,
+        'last_error' => 'http_5xx',
+    ])->and($client->posts[1]['payload']['connectivity'])->toBeNull();
+});
+
+it('counts a tick PingPong refused as reached', function () {
+    $state = stateDirectory();
+
+    machineAgent(new RecordingClient(422), $state)->tick(1000.0);
+
+    $client = new RecordingClient;
+    machineAgent($client, $state)->tick(1060.0);
+
+    expect($client->posts[0]['payload']['connectivity'])->toBeNull();
 });
