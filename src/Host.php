@@ -817,6 +817,56 @@ class Host
         return $this->processRuns((int) $pid);
     }
 
+    /**
+     * Whether this process may write to the Unix socket at the path, which
+     * is what connecting to it needs. Null when nothing is there.
+     */
+    public function socketWritable(string $path): ?bool
+    {
+        if (! @file_exists($path)) {
+            return null;
+        }
+
+        return @is_writable($path);
+    }
+
+    /**
+     * The contents of a file, null when it cannot be read.
+     */
+    public function contents(string $path): ?string
+    {
+        return $this->read($path);
+    }
+
+    /**
+     * The files matching a glob pattern, sorted. Empty when none match or
+     * the directory cannot be read.
+     *
+     * @return list<string>
+     */
+    public function files(string $pattern): array
+    {
+        $files = @glob($pattern);
+
+        if ($files === false) {
+            return [];
+        }
+
+        sort($files);
+
+        return $files;
+    }
+
+    /**
+     * The path with every symlink resolved, null when it does not exist.
+     */
+    public function realpath(string $path): ?string
+    {
+        $resolved = @realpath($path);
+
+        return $resolved === false ? null : $resolved;
+    }
+
     /** @return array{'1m': float, '5m': float, '15m': float} */
     private function loadShape(float $oneMinute, float $fiveMinutes, float $fifteenMinutes): array
     {

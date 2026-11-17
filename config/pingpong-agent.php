@@ -48,6 +48,7 @@ return [
         Signals\HostState::class,
         Signals\AppState::class,
         Signals\Pm2::class,
+        Signals\Supervisor::class,
         Signals\Flare::class,
     ],
 
