@@ -223,6 +223,17 @@ it('knows a daemon runs from the app', function (string $basePath, string $direc
     'a link to it' => [SUPERVISOR_SITE, '/home/forge/app', ['/home/forge/app' => SUPERVISOR_SITE]],
 ]);
 
+it('leaves ownership unknown for a relative Artisan command outside the site root', function () {
+    app()->setBasePath(SUPERVISOR_SITE);
+    supervisorStatus('daemon-1:daemon-1_00   RUNNING   pid 42, uptime 0:01:00');
+
+    $process = supervisorSignal(files: [
+        '/etc/supervisor/conf.d/daemon-1.conf' => forgeDaemon('daemon-1', '/home/forge'),
+    ])->collect()['processes'][0];
+
+    expect($process['own'])->toBeNull();
+});
+
 it('knows a daemon runs from the app by the path in its command', function (string $command, bool $own) {
     supervisorStatus('daemon-1:daemon-1_00   RUNNING   pid 101, uptime 0:10:00');
 

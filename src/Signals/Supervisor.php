@@ -188,7 +188,7 @@ class Supervisor implements Collector
      * @param  array{directory?: string, command?: string}  $program
      * @param  list<string>  $roots
      */
-    private function owns(array $program, array $roots): bool
+    private function owns(array $program, array $roots): ?bool
     {
         $directory = rtrim($program['directory'] ?? '', '/');
 
@@ -201,6 +201,14 @@ class Supervisor implements Collector
         foreach ($roots as $root) {
             if (preg_match('#'.preg_quote($root, '#').'(?=/|\s|$)#', $command) === 1) {
                 return true;
+            }
+        }
+
+        if ($directory !== '' && preg_match('#(?:^|\s)(?:\./)?artisan(?=\s|$)#', $command) === 1) {
+            foreach ($roots as $root) {
+                if (str_starts_with($root, $directory.'/')) {
+                    return null;
+                }
             }
         }
 

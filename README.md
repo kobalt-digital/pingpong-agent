@@ -71,7 +71,7 @@ return [
 ];
 ```
 
-Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It must be the final `https` URL. The Agent still follows a redirect, but logs a warning naming the URL to set instead. Removing a class from `signals` stops the tick from sending that signal. A published config keeps the list it was published with, so an app that published it before `Signals\Cpu`, `Signals\Pressure` and `Signals\HostState` existed sends none of them until it adds them to its `signals` list.
+Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It must be the final `https` URL. The Agent still follows a redirect, but logs a warning naming the URL to set instead. Removing a class from `signals` stops the tick from sending that signal. For Supervisor, add `Signals\Supervisor::class` to an existing published signal list. The scheduler user needs access to run `supervisorctl status` and read the program configuration. A socket permission error is reported as an unreadable status. A published config keeps the list it was published with, so an app that published it before `Signals\Cpu`, `Signals\Pressure` and `Signals\HostState` existed sends none of them until it adds them to its `signals` list.
 
 The tick runs every minute. Set `PINGPONG_TICK_MINUTES` to tick less often on one environment, for example `5` on acceptance. The value must divide 60 (1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30); any other value logs a warning and ticks every minute. Each tick carries its interval, so PingPong can tell a slower environment from a late tick.
 
