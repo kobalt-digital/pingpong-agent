@@ -109,19 +109,30 @@ in its answer to the tick, and gets them at most every 15 minutes.
 ```bash
 php pingpong-machine.phar tick         # read and send; cron runs this every minute
 php pingpong-machine.phar sites        # measure the sites now
-php pingpong-machine.phar self-update  # replace the phar with the newest one
+php pingpong-machine.phar self-update  # replace the phar with the one of the newest release
 php pingpong-machine.phar version
 ```
 
 `PINGPONG_MACHINE_CONFIG` points it at another config file.
 
-## Building
+## Building and releasing
 
-The phar in `dist/` is what `install.sh` and `self-update` download, so it is
-rebuilt and committed with every change to the agent:
+The phar in `dist/` is rebuilt and committed with every change to the agent:
 
 ```bash
 php -d phar.readonly=0 machine/build.php
 ```
 
 A test fails while the committed phar does not hold the current code.
+
+Servers never take it from a branch. Publishing a GitHub release attaches the
+phar and its checksum of the tagged commit to it
+(`.github/workflows/attach-machine-agent.yml`), and `install.sh` and the
+nightly `self-update` take them from the newest release. A push to `main`
+therefore reaches no server until someone releases it. Before a new phar
+replaces the old one it has to answer `version`, so one that does not start
+stays where it is and the old one keeps reporting.
+
+The Laravel agent is released from the same tags. It reaches an app only when
+that app updates its Composer dependencies, so a release can carry the
+machine agent without changing a single app.
