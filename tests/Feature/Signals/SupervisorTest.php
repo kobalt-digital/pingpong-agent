@@ -196,12 +196,25 @@ it('sends what an own daemon runs and counts the daemons of other sites', functi
 
     expect($signal)->toBe([
         'processes' => [
-            ['name' => 'daemon-1:daemon-1_00', 'status' => 'RUNNING', 'uptime_seconds' => 93784, 'own' => true, 'command' => 'queue:work redis --sleep=3 --tries=3'],
-            ['name' => 'ssr', 'status' => 'RUNNING', 'uptime_seconds' => 600, 'own' => true, 'command' => 'node'],
+            ['name' => 'daemon-1:daemon-1_00', 'status' => 'RUNNING', 'uptime_seconds' => 93784, 'own' => true, 'command' => 'queue:work redis --sleep=3 --tries=3', 'display_name' => 'queue:work', 'display_id' => '#1/00'],
+            ['name' => 'ssr', 'status' => 'RUNNING', 'uptime_seconds' => 600, 'own' => true, 'command' => 'node', 'display_name' => 'node', 'display_id' => null],
         ],
         'others' => 2,
         'error' => null,
     ]);
+});
+
+it('omits an oversized Forge display identifier', function () {
+    $name = 'daemon-1:daemon-1_'.str_repeat('0', 254);
+    supervisorStatus($name.'   RUNNING   pid 101, uptime 0:10:00');
+
+    $process = supervisorSignal(files: [
+        '/etc/supervisor/conf.d/daemon-1.conf' => forgeDaemon('daemon-1', SUPERVISOR_SITE),
+    ])->collect()['processes'][0];
+
+    expect($process['name'])->toHaveLength(255)
+        ->and($process['display_name'])->toBe('queue:work')
+        ->and($process['display_id'])->toBeNull();
 });
 
 it('knows a daemon runs from the app', function (string $basePath, string $directory, array $realpaths = []) {
