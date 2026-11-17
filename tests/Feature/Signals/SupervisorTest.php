@@ -133,6 +133,16 @@ it('reports empty output as no processes', function () {
     expect(supervisorSignal()->collect())->toBe(['processes' => [], 'others' => 0, 'error' => null]);
 });
 
+it('reports an error when supervisorctl fails without output', function () {
+    Process::fake(['*' => Process::result('', exitCode: 2)]);
+
+    expect(supervisorSignal()->collect())->toBe([
+        'processes' => null,
+        'others' => null,
+        'error' => 'supervisorctl status exited without reporting processes',
+    ]);
+});
+
 it('reads the list whatever the exit code', function () {
     Process::fake(['*' => Process::result("worker-1   FATAL   Exited too quickly\n", exitCode: 3)]);
 

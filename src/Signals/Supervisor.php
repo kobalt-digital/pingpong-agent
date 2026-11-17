@@ -70,9 +70,9 @@ class Supervisor implements Collector
         if ($lines === []) {
             $error = $this->firstLine($result->output()) ?? $this->firstLine($result->errorOutput());
 
-            return $error === null
+            return $error === null && $result->successful()
                 ? ['processes' => [], 'others' => 0, 'error' => null]
-                : $this->failed($error);
+                : $this->failed($error ?? 'supervisorctl status exited without reporting processes');
         }
 
         return $this->processes($lines);
