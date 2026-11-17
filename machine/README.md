@@ -84,8 +84,11 @@ the machine swaps.
 in a request of its own: every home directory and site under `/home` and
 `/var/www` (your home directory without root), two levels deep, plus the
 folders that grow on their own at any depth (`storage/logs`, `storage/app`,
-`wp-content/uploads`, `releases`), at most 400, each with its owner; and every
-database by the size of its folder in `/var/lib/mysql`.
+`wp-content/uploads`, `releases`), at most 400, each with its owner. Room left
+of the 400 goes to the largest folders deeper down from 100 MB
+(`releases/20261117/vendor`), never one in or under a hidden folder
+(`.git`, `.ssh`, `.config`), so what fills a site opens folder by folder.
+And every database by the size of its folder in `/var/lib/mysql`.
 
 `du` is the expensive part: it looks at every file, 8 to 17 microseconds
 each, so a server with a million files takes 8 to 20 seconds. To keep that

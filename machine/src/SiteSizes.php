@@ -14,6 +14,15 @@ namespace KobaltDigital\PingPong\Machine;
  * the folders that fill up on their own: logs, uploads, app storage and old
  * releases. Lines are filtered as they arrive, so the whole tree is never
  * held in memory.
+ *
+ * Whatever room is left of the folders sent goes to the largest folders
+ * deeper down (`releases/20261117/vendor`), from `DEEP_MIN_BYTES`, so what
+ * fills a site can be opened folder by folder. `du` counts them anyway, so
+ * this costs no reading of the disk. A folder is never larger than the one
+ * holding it, so taking the largest first never sends a folder without the
+ * one above it, and the folders kept above can never be pushed out by
+ * them. Nothing in or under a hidden folder (`.git`, `.ssh`, `.config`) is
+ * sent from deeper down: those names tell more about a user than a site.
  */
 class SiteSizes
 {
@@ -22,6 +31,9 @@ class SiteSizes
     public const MAX_DEPTH = 6;
 
     public const KEEP_DEPTH = 2;
+
+    /** The smallest folder deeper than `KEEP_DEPTH` that is sent, as room allows. */
+    public const DEEP_MIN_BYTES = 100 * 1024 * 1024;
 
     /** How long one scan of every site may take in all. */
     public const BUDGET_SECONDS = 900;
@@ -61,6 +73,7 @@ class SiteSizes
     {
         $deadline = microtime(true) + $budgetSeconds;
         $entries = [];
+        $deep = [];
         $unmeasured = [];
 
         foreach ($roots as $root) {
@@ -78,11 +91,17 @@ class SiteSizes
                 $result = $this->runner->run(
                     $this->lowPriority([$du, '-0', '-k', '-x', '-d', (string) (self::MAX_DEPTH - 1), $folder]),
                     min($left, self::FOLDER_TIMEOUT_SECONDS),
-                    function (string $line) use ($root, &$entries): void {
+                    function (string $line) use ($root, &$entries, &$deep): void {
                         $entry = $this->parseLine($line);
 
-                        if ($entry !== null && $this->keeps($entry['path'], $root)) {
+                        if ($entry === null) {
+                            return;
+                        }
+
+                        if ($this->keeps($entry['path'], $root)) {
                             $entries[] = $entry;
+                        } elseif ($this->keepsDeep($entry['path'], $root, $entry['bytes'])) {
+                            $deep[] = $entry;
                         }
                     },
                     "\0",
@@ -96,9 +115,12 @@ class SiteSizes
             }
         }
 
-        usort($entries, fn (array $a, array $b): int => $b['bytes'] <=> $a['bytes'] ?: strcmp($a['path'], $b['path']));
+        usort($entries, self::largestFirst(...));
+        usort($deep, self::largestFirst(...));
 
         $entries = array_slice($entries, 0, self::MAX_ENTRIES);
+        $entries = [...$entries, ...array_slice($deep, 0, self::MAX_ENTRIES - count($entries))];
+        usort($entries, self::largestFirst(...));
 
         return [
             'entries' => array_map(fn (array $entry): array => [...$entry, 'owner' => $this->owner($entry['path'], $roots)], $entries),
@@ -253,6 +275,41 @@ class SiteSizes
         }
 
         return false;
+    }
+
+    /**
+     * @param  array{path: string, bytes: int}  $a
+     * @param  array{path: string, bytes: int}  $b
+     */
+    private static function largestFirst(array $a, array $b): int
+    {
+        return $b['bytes'] <=> $a['bytes'] ?: strcmp($a['path'], $b['path']);
+    }
+
+    /**
+     * Whether a folder deeper than `KEEP_DEPTH` is large enough to send when
+     * there is room, and neither hidden nor inside a hidden folder.
+     */
+    public function keepsDeep(string $path, string $root, int $bytes): bool
+    {
+        if ($bytes < self::DEEP_MIN_BYTES || ! str_starts_with($path, $root.'/')) {
+            return false;
+        }
+
+        $segments = explode('/', ltrim(substr($path, strlen($root)), '/'));
+
+        if (count($segments) <= self::KEEP_DEPTH) {
+            return false;
+        }
+
+        /* Under a home or site folder: nothing in a hidden folder, however deep. */
+        foreach (array_slice($segments, 1) as $segment) {
+            if (str_starts_with($segment, '.')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

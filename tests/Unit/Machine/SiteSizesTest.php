@@ -24,6 +24,43 @@ it('keeps the first two levels under a root and the folders that fill up', funct
     ['/homeless/forge', false],
 ]);
 
+it('keeps a folder deeper down when it is large and not hidden', function (string $path, int $megabytes, bool $kept) {
+    expect(siteSizes()->keepsDeep($path, '/home', $megabytes * 1024 * 1024))->toBe($kept);
+})->with([
+    ['/home/forge/example.nl/vendor', 400, true],
+    ['/home/forge/example.nl/releases/20261117/vendor', 400, true],
+    ['/home/forge/example.nl/vendor', 99, false],
+    ['/home/forge/example.nl', 400, false],
+    ['/home/forge/example.nl/.git', 400, false],
+    ['/home/forge/.config/huge', 400, false],
+    ['/homeless/forge/example.nl/vendor', 400, false],
+]);
+
+it('fills the room left with the largest folders deeper down, never pushing out the ones it always sends', function () {
+    $root = siteRoot(['forge']);
+    $mb = 1024;
+    $lines = '';
+
+    foreach (range(1, SiteSizes::MAX_ENTRIES - 3) as $index) {
+        $lines .= "1\t{$root}/forge/site{$index}\n";
+    }
+
+    foreach ([300, 500, 200, 400, 150] as $index => $megabytes) {
+        $lines .= ($megabytes * $mb)."\t{$root}/forge/site1/deep{$index}\n";
+    }
+
+    $lines .= (9000 * $mb)."\t{$root}/forge\n";
+
+    $paths = array_column(siteSizes()->sites([$root], fakeDu($lines))['entries'], 'path');
+
+    expect($paths)->toHaveCount(SiteSizes::MAX_ENTRIES)
+        ->toContain("{$root}/forge", "{$root}/forge/site1", "{$root}/forge/site".(SiteSizes::MAX_ENTRIES - 3))
+        ->and(array_values(array_filter($paths, fn (string $path): bool => str_contains($path, '/deep'))))->toBe([
+            "{$root}/forge/site1/deep1",
+            "{$root}/forge/site1/deep3",
+        ]);
+});
+
 it('reads a line of du', function () {
     expect(siteSizes()->parseLine("2048\t/home/forge/my site.nl"))->toBe(['path' => '/home/forge/my site.nl', 'bytes' => 2048 * 1024])
         ->and(siteSizes()->parseLine('du: cannot read directory'))->toBeNull();
