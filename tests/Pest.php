@@ -9,6 +9,13 @@ use KobaltDigital\PingPong\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
 
+/* The machine agent reads /proc and runs du and df: it runs on Linux only. */
+uses()->beforeEach(function () {
+    if (PHP_OS_FAMILY === 'Windows') {
+        $this->markTestSkipped('The machine agent runs on Linux only.');
+    }
+})->in('Unit/Machine');
+
 function payloadFixture(string $name): stdClass
 {
     return json_decode(file_get_contents(__DIR__."/Fixtures/schema-1/{$name}.json"), flags: JSON_THROW_ON_ERROR);
