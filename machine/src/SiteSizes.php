@@ -61,11 +61,15 @@ class SiteSizes
     public function __construct(private Runner $runner, private Users $users, private string $mounts = '/proc/mounts') {}
 
     /**
-     * Every folder right under a root (a home directory, a site in
-     * `/var/www`) gets a `du` of its own, so one that holds millions of files
-     * only loses itself to the timeout: `du` prints a folder once everything
-     * in it is counted, so a single `du` over the root would lose every
-     * total above the folder it was stuck in.
+     * Every folder one level under each folder of a root (a site in a home
+     * directory, the app folders of a site in `/var/www`) gets a `du` of its
+     * own, so one that holds millions of files only loses itself to the
+     * timeout: `du` prints a folder once everything in it is counted, so a
+     * single `du` over a whole home directory lost its total, and every
+     * site after the one it was stuck in, the moment one site was too big.
+     * The folder above is then the sum of what is in it. When a folder
+     * under it ran out of time, that sum is only what was counted, and the
+     * folder is unmeasured too: PingPong reads it as "at least".
      *
      * @param  list<string>  $roots
      * @return array{entries: list<array{path: string, bytes: int, owner: ?string}>, complete: bool, unmeasured: list<string>}
@@ -81,38 +85,28 @@ class SiteSizes
             $root = rtrim($root, '/');
 
             foreach ($this->folders($root) as $folder) {
-                $left = (int) floor($deadline - microtime(true));
+                $children = $this->folders($folder);
 
-                if ($left < 1) {
-                    $unmeasured[] = $folder;
+                if ($children === []) {
+                    $this->measure($folder, $root, $du, self::MAX_DEPTH - 1, $deadline, $entries, $deep, $unmeasured);
 
                     continue;
                 }
 
-                $result = $this->runner->run(
-                    $this->lowPriority([$du, '-0', '-k', '-x', '-d', (string) (self::MAX_DEPTH - 1), $folder]),
-                    min($left, self::FOLDER_TIMEOUT_SECONDS),
-                    function (string $line) use ($root, &$entries, &$deep): void {
-                        $entry = $this->parseLine($line);
+                $bytes = $this->looseBytes($folder);
+                $counted = true;
 
-                        if ($entry === null) {
-                            return;
-                        }
+                foreach ($children as $child) {
+                    $total = $this->measure($child, $root, $du, self::MAX_DEPTH - 2, $deadline, $entries, $deep, $unmeasured);
+                    $bytes += $total ?? 0;
+                    $counted = $counted && $total !== null;
+                }
 
-                        if ($this->keeps($entry['path'], $root)) {
-                            $entries[] = $entry;
-                        } elseif ($this->keepsDeep($entry['path'], $root, $entry['bytes'])) {
-                            $deep[] = $entry;
-                        }
-                    },
-                    "\0",
-                );
-
-                /* du exits 1 when it could not read a folder somewhere, and
-                   still prints everything else, so only a timeout loses it. */
-                if ($result === null || $result['timed_out']) {
+                if (! $counted) {
                     $unmeasured[] = $folder;
                 }
+
+                $entries[] = ['path' => $folder, 'bytes' => $bytes];
             }
         }
 
@@ -128,6 +122,90 @@ class SiteSizes
             'complete' => $unmeasured === [],
             'unmeasured' => array_slice($unmeasured, 0, self::MAX_ENTRIES),
         ];
+    }
+
+    /**
+     * One `du` of a folder, its lines sorted into what is always sent and
+     * what is sent as room allows. The folder's own total, or null when `du`
+     * ran out of time on it or there was no time left to start: then it is
+     * unmeasured, and only the folders inside it that `du` finished count.
+     *
+     * @param  list<array{path: string, bytes: int}>  $entries
+     * @param  list<array{path: string, bytes: int}>  $deep
+     * @param  list<string>  $unmeasured
+     */
+    private function measure(string $folder, string $root, string $du, int $depth, float $deadline, array &$entries, array &$deep, array &$unmeasured): ?int
+    {
+        $left = (int) floor($deadline - microtime(true));
+
+        if ($left < 1) {
+            $unmeasured[] = $folder;
+
+            return null;
+        }
+
+        $total = null;
+
+        $result = $this->runner->run(
+            $this->lowPriority([$du, '-0', '-k', '-x', '-d', (string) $depth, $folder]),
+            min($left, self::FOLDER_TIMEOUT_SECONDS),
+            function (string $line) use ($folder, $root, &$entries, &$deep, &$total): void {
+                $entry = $this->parseLine($line);
+
+                if ($entry === null) {
+                    return;
+                }
+
+                if ($entry['path'] === $folder) {
+                    $total = $entry['bytes'];
+                }
+
+                if ($this->keeps($entry['path'], $root)) {
+                    $entries[] = $entry;
+                } elseif ($this->keepsDeep($entry['path'], $root, $entry['bytes'])) {
+                    $deep[] = $entry;
+                }
+            },
+            "\0",
+        );
+
+        /* du exits 1 when it could not read a folder somewhere, and still
+           prints everything else, so only a timeout loses it. */
+        if ($result === null || $result['timed_out']) {
+            $unmeasured[] = $folder;
+
+            return null;
+        }
+
+        return $total;
+    }
+
+    /**
+     * What a folder holds outside the folders in it: its own entry and the
+     * files right in it (a home directory's dotfiles), counted in blocks as
+     * `du` counts them.
+     */
+    private function looseBytes(string $folder): int
+    {
+        $bytes = $this->blockBytes($folder);
+
+        foreach (@scandir($folder) ?: [] as $name) {
+            $path = "{$folder}/{$name}";
+
+            if ($name !== '.' && $name !== '..' && (! @is_dir($path) || @is_link($path))) {
+                $bytes += $this->blockBytes($path);
+            }
+        }
+
+        return $bytes;
+    }
+
+    /** The room one entry takes on disk, in bytes, without following a link. */
+    private function blockBytes(string $path): int
+    {
+        $stat = @lstat($path);
+
+        return $stat === false ? 0 : max(0, $stat['blocks']) * 512;
     }
 
     /**
