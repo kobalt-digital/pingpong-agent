@@ -434,6 +434,21 @@ it('reads the upgradable packages apt lists, marking those from a security pocke
     ]);
 });
 
+it('counts every upgradable package apt lists, Debian\'s security suite too, and names at most 500', function () {
+    $lines = ['Listing...', 'libssl3t64/stable-security 3.5.1-1+deb13u1 amd64 [upgradable from: 3.5.1-1]'];
+
+    for ($i = 1; $i <= Host::MAX_UPDATE_PACKAGES; $i++) {
+        $lines[] = "package-{$i}/stable 1.0-{$i} amd64 [upgradable from: 1.0-0]";
+    }
+
+    $summary = (new Host)->parseUpgradableSummary(implode("\n", $lines));
+
+    expect($summary['pending'])->toBe(Host::MAX_UPDATE_PACKAGES + 1)
+        ->and($summary['security'])->toBe(1)
+        ->and($summary['packages'])->toHaveCount(Host::MAX_UPDATE_PACKAGES)
+        ->and($summary['packages'][0])->toBe(['name' => 'libssl3t64', 'version' => '3.5.1-1+deb13u1', 'security' => true]);
+});
+
 it('names an ECS task\'s fleet by its cluster and service, else its task family', function () {
     $host = new Host;
 

@@ -47,6 +47,12 @@ class Host
 
     public const UPDATES_AVAILABLE_FILE = '/var/lib/update-notifier/updates-available';
 
+    /** Where apt keeps the package lists of its sources, which `apt update` refreshes. */
+    public const APT_LISTS_DIRECTORY = '/var/lib/apt/lists';
+
+    /** What dpkg has installed, rewritten on every install, upgrade and removal. */
+    public const DPKG_STATUS_FILE = '/var/lib/dpkg/status';
+
     /** @return array{'1m': float, '5m': float, '15m': float}|null */
     public function loadAverage(): ?array
     {
@@ -558,31 +564,65 @@ class Host
     }
 
     /**
-     * When update-notifier last counted the updates, which apt does again
-     * whenever its lists or the installed packages change. Null where it
-     * does not run.
+     * When the pending updates last changed: when update-notifier last
+     * counted them, which apt has it do whenever its lists or the installed
+     * packages change. Where update-notifier does not run (Debian, a minimal
+     * Ubuntu), the newer of apt's lists and dpkg's status, which change on
+     * the same two events. Null where none of them exists.
      */
     public function updatesStamp(): ?int
     {
         $stamp = @filemtime(self::UPDATES_AVAILABLE_FILE);
 
-        return $stamp === false ? null : $stamp;
+        if ($stamp !== false) {
+            return $stamp;
+        }
+
+        $stamps = array_filter([@filemtime(self::APT_LISTS_DIRECTORY), @filemtime(self::DPKG_STATUS_FILE)], is_int(...));
+
+        return $stamps === [] ? null : max($stamps);
+    }
+
+    /**
+     * Whether apt has the package lists of a source to compare the installed
+     * packages against. A container image usually ships without them, and
+     * without lists apt finds nothing to upgrade, which would read as up to
+     * date.
+     */
+    public function hasAptLists(): bool
+    {
+        $lists = @glob(self::APT_LISTS_DIRECTORY.'/*_Packages*');
+
+        return is_array($lists) && $lists !== [];
     }
 
     /**
      * The packages apt can upgrade, by name, with the version on offer and
-     * whether it comes from a security pocket. Asks `apt list --upgradable`
-     * without a shell, in the C locale, which reads apt's lists and needs no
-     * root. Null where apt is missing, on a system that is not like Debian,
-     * and when it fails or hangs.
+     * whether it comes from a security pocket.
      *
      * @return list<array{name: string, version: ?string, security: bool}>|null
      */
     public function upgradablePackages(): ?array
     {
+        return $this->upgradable()['packages'] ?? null;
+    }
+
+    /**
+     * What apt can upgrade: how many packages, how many of them from a
+     * security pocket, and the packages by name. It counts the updates where
+     * update-notifier does not (Debian, a minimal Ubuntu), in the same terms.
+     * Asks `apt list --upgradable` without a shell, in the C locale, which
+     * reads apt's lists and needs no root. Null where apt is missing or has
+     * no lists, on a system that is not like Debian, and when it fails or
+     * hangs.
+     *
+     * @return array{pending: int, security: int, packages: list<array{name: string, version: ?string, security: bool}>}|null
+     */
+    public function upgradable(): ?array
+    {
         $binary = $this->executable('apt');
 
-        if ($binary === null || ! function_exists('proc_open') || ! $this->isDebianLike((string) $this->osRelease())) {
+        if ($binary === null || ! function_exists('proc_open') || ! $this->isDebianLike((string) $this->osRelease()) || ! $this->hasAptLists()) {
             return null;
         }
 
@@ -598,20 +638,34 @@ class Host
             return null;
         }
 
-        return $this->parseUpgradable($result->output());
+        return $this->parseUpgradableSummary($result->output());
+    }
+
+    /**
+     * The packages of `apt list --upgradable`, at most 500, as
+     * `parseUpgradableSummary` reads them.
+     *
+     * @return list<array{name: string, version: ?string, security: bool}>
+     */
+    public function parseUpgradable(string $output): array
+    {
+        return $this->parseUpgradableSummary($output)['packages'];
     }
 
     /**
      * Reads `apt list --upgradable`, one package per line such as
      * `openssl/noble-updates,noble-security 3.0.13-0ubuntu3.5 amd64
      * [upgradable from: 3.0.13-0ubuntu3.4]`. A package is a security update
-     * when one of its suites ends in `-security`. The "Listing..." header
-     * and apt's warning about its CLI are skipped. At most 500.
+     * when one of its suites ends in `-security` (`noble-security`,
+     * `trixie-security`). The "Listing..." header and apt's warning about
+     * its CLI are skipped. Every package counts, but at most 500 are listed.
      *
-     * @return list<array{name: string, version: ?string, security: bool}>
+     * @return array{pending: int, security: int, packages: list<array{name: string, version: ?string, security: bool}>}
      */
-    public function parseUpgradable(string $output): array
+    public function parseUpgradableSummary(string $output): array
     {
+        $pending = 0;
+        $security = 0;
         $packages = [];
 
         foreach (preg_split('/\R/', $output) ?: [] as $line) {
@@ -619,20 +673,20 @@ class Host
                 continue;
             }
 
-            $suites = explode(',', $match[2]);
+            $isSecurity = array_filter(explode(',', $match[2]), fn (string $suite): bool => str_ends_with($suite, '-security')) !== [];
+            $pending++;
+            $security += $isSecurity ? 1 : 0;
 
-            $packages[] = [
-                'name' => mb_substr($match[1], 0, 255),
-                'version' => mb_substr($match[3], 0, 255),
-                'security' => array_filter($suites, fn (string $suite): bool => str_ends_with($suite, '-security')) !== [],
-            ];
-
-            if (count($packages) === self::MAX_UPDATE_PACKAGES) {
-                break;
+            if (count($packages) < self::MAX_UPDATE_PACKAGES) {
+                $packages[] = [
+                    'name' => mb_substr($match[1], 0, 255),
+                    'version' => mb_substr($match[3], 0, 255),
+                    'security' => $isSecurity,
+                ];
             }
         }
 
-        return $packages;
+        return ['pending' => $pending, 'security' => $security, 'packages' => $packages];
     }
 
     /**

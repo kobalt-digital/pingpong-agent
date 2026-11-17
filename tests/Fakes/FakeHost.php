@@ -51,9 +51,18 @@ class FakeHost extends Host
         return $this->inFleet ?? ($this->fleet !== null || parent::inFleet());
     }
 
-    public function upgradablePackages(): ?array
+    /** apt's answer: the packages as set, counted, else as the update counts say. */
+    public function upgradable(): ?array
     {
-        return $this->updatePackages;
+        if ($this->updatePackages === null) {
+            return null;
+        }
+
+        return [
+            'pending' => $this->updates['pending'] ?? count($this->updatePackages),
+            'security' => $this->updates['security'] ?? count(array_filter($this->updatePackages, fn (array $package): bool => $package['security'])),
+            'packages' => $this->updatePackages,
+        ];
     }
 
     public function updatesStamp(): ?int
