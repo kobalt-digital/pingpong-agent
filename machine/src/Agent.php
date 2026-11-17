@@ -148,7 +148,7 @@ class Agent
      */
     public function sitesDue(bool $requested, bool $busy = false, ?float $now = null): bool
     {
-        $last = $this->state->get('sites_at');
+        $last = @file_get_contents($this->scannedAtFile());
         $since = is_numeric($last) ? ($now ?? microtime(true)) - (float) $last : PHP_FLOAT_MAX;
 
         if ($busy) {
@@ -182,9 +182,14 @@ class Agent
             $databases = $this->config->system ? $this->siteSizes->databases($du) : null;
 
             /* Kept before sending: a scan PingPong did not take is not run
-               again every minute. */
-            $this->state->set('sites_at', $now ?? microtime(true));
-            $this->state->save();
+               again every minute. In a file of its own, never in the state
+               the ticks write: a scan takes minutes, and neither may write
+               over what the other saved meanwhile. */
+            $temporary = $this->scannedAtFile().'.'.getmypid();
+
+            if (@file_put_contents($temporary, (string) ($now ?? microtime(true))) !== false) {
+                @rename($temporary, $this->scannedAtFile());
+            }
 
             $response = $this->client->post('api/machine/sites', [
                 ...$this->envelope($now ?? microtime(true)),
@@ -200,6 +205,11 @@ class Agent
             flock($lock, LOCK_UN);
             fclose($lock);
         }
+    }
+
+    private function scannedAtFile(): string
+    {
+        return $this->state->directory().'/sites_at';
     }
 
     /**

@@ -2,39 +2,6 @@
 
 use KobaltDigital\PingPong\Machine\ProcessTable;
 
-/**
- * A line of /proc/<pid>/stat with the fields the table reads: flags (9),
- * utime (14), stime (15), starttime (22) and rss (24).
- */
-function statLine(int $pid, string $name, int $utime, int $stime, int $started, int $rssPages, int $flags = 0): string
-{
-    $fields = array_fill(3, 50, '0');
-    $fields[3] = 'S';
-    $fields[9] = (string) $flags;
-    $fields[14] = (string) $utime;
-    $fields[15] = (string) $stime;
-    $fields[22] = (string) $started;
-    $fields[24] = (string) $rssPages;
-
-    return "{$pid} ({$name}) ".implode(' ', $fields)."\n";
-}
-
-function fakeProc(array $processes): string
-{
-    $proc = sys_get_temp_dir().'/pingpong-proc-'.bin2hex(random_bytes(4));
-    mkdir($proc);
-    file_put_contents("{$proc}/uptime", "5000.25 70000.00\n");
-
-    foreach ($processes as $pid => $process) {
-        mkdir("{$proc}/{$pid}");
-        file_put_contents("{$proc}/{$pid}/stat", $process['stat']);
-        file_put_contents("{$proc}/{$pid}/cmdline", $process['cmdline'] ?? '');
-        file_put_contents("{$proc}/{$pid}/status", $process['status'] ?? '');
-    }
-
-    return $proc;
-}
-
 it('reads the name, CPU ticks, memory and start of a process', function () {
     $process = (new ProcessTable)->parseStat(statLine(42, 'php-fpm8.3', 120, 30, 9000, 2560));
 

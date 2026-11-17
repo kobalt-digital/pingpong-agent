@@ -184,3 +184,29 @@ it('counts a tick PingPong refused as reached', function () {
 
     expect($client->posts[0]['payload']['connectivity'])->toBeNull();
 });
+
+it('keeps what the ticks saved while the sites were being measured', function () {
+    $state = stateDirectory();
+    $agent = machineAgent(new RecordingClient, $state, du: fakeDu(''));
+
+    /* A tick that ran in the minutes the scan took could not reach PingPong. */
+    machineAgent(new RecordingClient(0), $state)->tick(1000.0);
+
+    $agent->sites(1030.0);
+
+    $client = new RecordingClient;
+    machineAgent($client, $state)->tick(1060.0);
+
+    expect($client->posts[0]['payload']['connectivity']['failed_attempts'])->toBe(1);
+});
+
+it('never has a tick write back an older time of the last scan', function () {
+    $state = stateDirectory();
+
+    /* A tick that loaded its state before the scan ended saves after it. */
+    $tick = machineAgent(new RecordingClient, $state);
+    machineAgent(new RecordingClient, $state, du: fakeDu(''))->sites(1000.0);
+    $tick->tick(1010.0);
+
+    expect(machineAgent(new RecordingClient, $state)->sitesDue(false, now: 1060.0))->toBeFalse();
+});
