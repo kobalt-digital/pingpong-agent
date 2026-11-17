@@ -5,12 +5,14 @@ namespace KobaltDigital\PingPong\Actions;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
+use KobaltDigital\PingPong\Host;
 use Throwable;
 use UnexpectedValueException;
 
 class CollectSignals
 {
-    public function __construct(private Application $app) {}
+    public function __construct(private Application $app, private Host $host) {}
 
     /** @return array<string, mixed> */
     public function execute(): array
@@ -31,6 +33,12 @@ class CollectSignals
             if (! is_string($collectorClass) || ! is_a($collectorClass, Collector::class, true)) {
                 Log::warning('PingPong Agent ignores a signal that does not implement Collector.');
 
+                continue;
+            }
+
+            /* The machine agent reads the machine, once for every app on it;
+               only an ECS task, which cannot run it, still reads its own. */
+            if (is_a($collectorClass, MachineSignal::class, true) && ! $this->host->inFleet()) {
                 continue;
             }
 

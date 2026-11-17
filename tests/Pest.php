@@ -9,6 +9,13 @@ use KobaltDigital\PingPong\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
 
+/* The machine agent reads /proc and runs du and df: it runs on Linux only. */
+uses()->beforeEach(function () {
+    if (PHP_OS_FAMILY === 'Windows') {
+        $this->markTestSkipped('The machine agent runs on Linux only.');
+    }
+})->in('Unit/Machine');
+
 function payloadFixture(string $name): stdClass
 {
     return json_decode(file_get_contents(__DIR__."/Fixtures/schema-1/{$name}.json"), flags: JSON_THROW_ON_ERROR);
@@ -166,4 +173,74 @@ function useUnwritableStorage(): void
     touch($file);
 
     app()->useStoragePath($file);
+}
+
+/* The machine agent's tests share a fake /proc and a fake du. */
+
+/**
+ * A line of /proc/<pid>/stat with the fields the table reads: flags (9),
+ * utime (14), stime (15), starttime (22) and rss (24).
+ */
+function statLine(int $pid, string $name, int $utime, int $stime, int $started, int $rssPages, int $flags = 0): string
+{
+    $fields = array_fill(3, 50, '0');
+    $fields[3] = 'S';
+    $fields[9] = (string) $flags;
+    $fields[14] = (string) $utime;
+    $fields[15] = (string) $stime;
+    $fields[22] = (string) $started;
+    $fields[24] = (string) $rssPages;
+
+    return "{$pid} ({$name}) ".implode(' ', $fields)."\n";
+}
+
+function fakeProc(array $processes): string
+{
+    $proc = sys_get_temp_dir().'/pingpong-proc-'.bin2hex(random_bytes(4));
+    mkdir($proc);
+    file_put_contents("{$proc}/uptime", "5000.25 70000.00\n");
+
+    foreach ($processes as $pid => $process) {
+        mkdir("{$proc}/{$pid}");
+        file_put_contents("{$proc}/{$pid}/stat", $process['stat']);
+        file_put_contents("{$proc}/{$pid}/cmdline", $process['cmdline'] ?? '');
+        file_put_contents("{$proc}/{$pid}/status", $process['status'] ?? '');
+    }
+
+    return $proc;
+}
+
+/**
+ * A stand-in for du that prints the given lines under the folder it is
+ * asked about, the way du does: a size in kilobytes, a tab and the path,
+ * children before their parents. Asked about the slow folder, it then
+ * hangs.
+ */
+function fakeDu(string $output, ?string $slowFolder = null): string
+{
+    $script = tempnam(sys_get_temp_dir(), 'du');
+    $data = $script.'.out';
+    file_put_contents($data, $output);
+    file_put_contents($script, <<<SH
+    #!/bin/sh
+    for last; do :; done
+    awk -F '\t' -v p="\$last" '\$2 == p || index(\$2, p "/") == 1' '{$data}'
+    if [ "\$last" = "{$slowFolder}" ]; then sleep 5; fi
+
+    SH);
+    chmod($script, 0755);
+
+    return $script;
+}
+
+/** A folder with the given folders in it. */
+function siteRoot(array $folders): string
+{
+    $root = sys_get_temp_dir().'/pingpong-sites-'.bin2hex(random_bytes(4));
+
+    foreach ($folders as $folder) {
+        mkdir("{$root}/{$folder}", 0755, true);
+    }
+
+    return $root;
 }

@@ -109,7 +109,8 @@ it('schedules nothing while the app runs its unit tests', function () {
 it('sends a tick shaped like the schema 1 fixture', function () {
     config()->set('pingpong-agent.key', 'pp_agent_test');
 
-    $this->app->instance(Host::class, new FakeHost(executables: ['pm2' => '/usr/bin/pm2'], livePidFiles: ['/srv/pm2/pm2.pid']));
+    /* Inside an ECS task, the one place the tick still carries the machine. */
+    $this->app->instance(Host::class, new FakeHost(executables: ['pm2' => '/usr/bin/pm2'], livePidFiles: ['/srv/pm2/pm2.pid'], inFleet: true));
     Process::fake(['*' => Process::result(json_encode([[
         'name' => 'queue-worker',
         'pm_id' => 0,

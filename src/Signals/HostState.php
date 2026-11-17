@@ -3,7 +3,7 @@
 namespace KobaltDigital\PingPong\Signals;
 
 use Illuminate\Contracts\Cache\Repository;
-use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
 use KobaltDigital\PingPong\Host;
 use Throwable;
 
@@ -16,7 +16,7 @@ use Throwable;
  * update-notifier counts again (apt does so whenever its lists or the
  * installed packages change), for a day at most.
  */
-class HostState implements Collector
+class HostState implements MachineSignal
 {
     public const UPDATE_PACKAGES_TTL_SECONDS = 86400;
 

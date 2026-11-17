@@ -2,14 +2,14 @@
 
 namespace KobaltDigital\PingPong\Signals;
 
-use KobaltDigital\PingPong\Contracts\Collector;
+use KobaltDigital\PingPong\Contracts\MachineSignal;
 use KobaltDigital\PingPong\Host;
 
 /**
  * Pressure stall information: the percentage of the last minute in which
  * tasks waited on CPU, memory or IO.
  */
-class Pressure implements Collector
+class Pressure implements MachineSignal
 {
     public function __construct(private Host $host) {}
 
