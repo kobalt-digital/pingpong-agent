@@ -6,6 +6,7 @@
  * processes and the size of its sites, and sends them to PingPong.
  *
  *   pingpong-machine tick         read and send, from cron every minute
+ *                                 (--without-sites: leave the hourly scan to the next run)
  *   pingpong-machine sites        measure the sites now
  *   pingpong-machine self-update  replace this phar with the newest one
  *   pingpong-machine version
@@ -35,7 +36,9 @@ if (! class_exists(Agent::class)) {
     require dirname(__DIR__, 2).'/vendor/autoload.php';
 }
 
-$command = $argv[1] ?? 'help';
+$arguments = is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [];
+$command = $arguments[1] ?? 'help';
+$withoutSites = in_array('--without-sites', $arguments, true);
 
 if ($command === 'version') {
     echo Agent::VERSION, "\n";
@@ -98,7 +101,8 @@ if (! $tick['sent']) {
     exit(1);
 }
 
-if ($agent->sitesDue($tick['measure_sites'], $tick['busy'])) {
+/* The installer leaves the first scan to cron, so it does not sit through one. */
+if (! $withoutSites && $agent->sitesDue($tick['measure_sites'], $tick['busy'])) {
     $agent->sites();
 }
 

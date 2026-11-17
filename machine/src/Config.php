@@ -68,8 +68,15 @@ final class Config
         $url = $values['url'] ?? null;
         $key = $values['key'] ?? null;
 
-        if (! is_string($url) || ! str_starts_with($url, 'http') || ! is_string($key) || $key === '') {
+        if (! is_string($url) || ! is_string($key) || $key === '') {
             throw new RuntimeException('The config file needs a "url" and a "key".');
+        }
+
+        /* The key travels in every request: never in the clear, except to this machine itself. */
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (! str_starts_with($url, 'https://') && ! (str_starts_with($url, 'http://') && in_array($host, ['localhost', '127.0.0.1', '[::1]'], true))) {
+            throw new RuntimeException('The "url" must start with https://.');
         }
 
         $state = is_string($values['state_dir'] ?? null) && $values['state_dir'] !== '' ? $values['state_dir'] : $defaultState;
@@ -116,6 +123,6 @@ final class Config
             }
         }
 
-        return '/tmp';
+        throw new RuntimeException('Cannot tell the home directory: set HOME.');
     }
 }

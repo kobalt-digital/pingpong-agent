@@ -63,3 +63,7 @@ it('gives no table when proc cannot be read', function () {
     expect((new ProcessTable('/does/not/exist'))->read(false))->toBeNull()
         ->and((new ProcessTable('/does/not/exist'))->seesEveryone())->toBeFalse();
 });
+
+it('keeps the pool of php-fpm to a name PingPong takes', function () {
+    expect(strlen((new ProcessTable)->fpmName('php-fpm: pool '.str_repeat('long-domain.', 10).'nl')))->toBe(64);
+});

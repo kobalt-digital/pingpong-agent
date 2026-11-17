@@ -14,7 +14,7 @@ class Runner
      * @param  (callable(string): void)|null  $onLine  gets every line of stdout, without its newline
      * @return array{exit: int, output: string, timed_out: bool}|null null when it could not start
      */
-    public function run(array $command, int $timeoutSeconds, ?callable $onLine = null): ?array
+    public function run(array $command, int $timeoutSeconds, ?callable $onLine = null, string $separator = "\n"): ?array
     {
         if (! function_exists('proc_open')) {
             return null;
@@ -71,7 +71,7 @@ class Runner
 
             $pending .= $chunk;
 
-            while (($newline = strpos($pending, "\n")) !== false) {
+            while (($newline = strpos($pending, $separator)) !== false) {
                 $onLine(substr($pending, 0, $newline));
                 $pending = substr($pending, $newline + 1);
             }
@@ -83,20 +83,52 @@ class Runner
 
         fclose($stdout);
 
-        if ($timedOut) {
-            @proc_terminate($process, 9);
+        /* Its output ended, but a program can close stdout and go on: its
+           exit is waited for within the same deadline, never by proc_close,
+           which waits as long as it takes. */
+        if (! $timedOut) {
+            $exit = $this->exitBefore($process, $deadline);
 
-            /* A program stuck on a filesystem that stopped answering (NFS)
-               does not die even of a kill until the kernel lets go of it;
-               waiting for it would stall this run too, so it is left. */
-            if (! $this->ends($process)) {
-                return ['exit' => -1, 'output' => $output, 'timed_out' => true];
+            if ($exit !== null) {
+                proc_close($process);
+
+                return ['exit' => $exit, 'output' => $output, 'timed_out' => false];
             }
         }
 
-        $exit = proc_close($process);
+        @proc_terminate($process, 9);
 
-        return ['exit' => $exit, 'output' => $output, 'timed_out' => $timedOut];
+        /* A program stuck on a filesystem that stopped answering (NFS)
+           does not die even of a kill until the kernel lets go of it;
+           waiting for it would stall this run too, so it is left. */
+        if (! $this->ends($process)) {
+            return ['exit' => -1, 'output' => $output, 'timed_out' => true];
+        }
+
+        return ['exit' => proc_close($process), 'output' => $output, 'timed_out' => true];
+    }
+
+    /**
+     * The exit code of a process once it ended, or null when it still runs
+     * at the deadline.
+     *
+     * @param  resource  $process
+     */
+    private function exitBefore($process, float $deadline): ?int
+    {
+        while (true) {
+            $status = @proc_get_status($process);
+
+            if (! $status['running']) {
+                return $status['exitcode'];
+            }
+
+            if (microtime(true) >= $deadline) {
+                return null;
+            }
+
+            usleep(10_000);
+        }
     }
 
     /**
