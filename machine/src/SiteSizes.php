@@ -76,7 +76,7 @@ class SiteSizes
                 }
 
                 $result = $this->runner->run(
-                    $this->lowPriority([$du, '-k', '-x', '-d', (string) (self::MAX_DEPTH - 1), $folder]),
+                    $this->lowPriority([$du, '-0', '-k', '-x', '-d', (string) (self::MAX_DEPTH - 1), $folder]),
                     min($left, self::FOLDER_TIMEOUT_SECONDS),
                     function (string $line) use ($root, &$entries): void {
                         $entry = $this->parseLine($line);
@@ -85,6 +85,7 @@ class SiteSizes
                             $entries[] = $entry;
                         }
                     },
+                    "\0",
                 );
 
                 /* du exits 1 when it could not read a folder somewhere, and
@@ -188,7 +189,7 @@ class SiteSizes
         $databases = [];
 
         $result = $this->runner->run(
-            $this->lowPriority([$du, '-k', '-d', '1', $directory]),
+            $this->lowPriority([$du, '-0', '-k', '-d', '1', $directory]),
             self::DATABASE_TIMEOUT_SECONDS,
             function (string $line) use ($directory, &$databases): void {
                 $entry = $this->parseLine($line);
@@ -203,6 +204,7 @@ class SiteSizes
                     $databases[] = ['name' => $name, 'bytes' => $entry['bytes']];
                 }
             },
+            "\0",
         );
 
         if ($result === null || ($databases === [] && $result['exit'] !== 0)) {
@@ -215,13 +217,15 @@ class SiteSizes
     }
 
     /**
-     * One line of `du -k`: kilobytes, a tab, the path.
+     * One entry of `du -0 -k`: kilobytes, a tab, the path. Entries end in a
+     * NUL rather than a newline, which a folder name can hold: a user must
+     * not be able to name a folder so it reads as the size of another's.
      *
      * @return array{path: string, bytes: int}|null
      */
     public function parseLine(string $line): ?array
     {
-        if (preg_match('/^(\d+)\t(.+)$/', $line, $match) !== 1) {
+        if (preg_match('/^(\d+)\t(.+)$/s', $line, $match) !== 1) {
             return null;
         }
 

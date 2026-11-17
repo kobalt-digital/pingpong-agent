@@ -80,18 +80,26 @@ if [ "$(id -u)" -eq 0 ]; then
 
     id pingpong-machine >/dev/null 2>&1 || useradd --system --no-create-home --home-dir "$STATE" --shell /usr/sbin/nologin pingpong-machine
 
+    # The phar belongs to pingpong-machine, in a folder of its own, so the
+    # nightly self-update never runs as root: whatever it downloads runs with
+    # no more rights than the agent has anyway.
+    AGENT="$LIBRARY/agent"
     install -d -m 0755 "$LIBRARY"
+    install -d -m 0755 -o pingpong-machine -g pingpong-machine "$AGENT"
     install -d -m 0750 -g pingpong-machine "$CONFIG"
     install -d -m 0750 -o pingpong-machine -g pingpong-machine "$STATE"
 
-    fetch_phar "$LIBRARY"
+    fetch_phar "$AGENT"
+    chown pingpong-machine:pingpong-machine "$AGENT/pingpong-machine.phar"
 
     write_config "$CONFIG/config.json"
     chown root:pingpong-machine "$CONFIG/config.json"
     chmod 0640 "$CONFIG/config.json"
 
-    # A du that may read every folder, and nothing else, so the agent can
-    # measure home directories closed to others without running as root.
+    # A du that may read every file, so the agent can measure home
+    # directories closed to others without running as root. That reaches
+    # further than folder sizes (du can print what it reads in its errors),
+    # so only root and pingpong-machine may run it, and it stays root's.
     install -m 0750 -g pingpong-machine "$(command -v du)" "$LIBRARY/du"
 
     if command -v setcap >/dev/null; then
@@ -103,13 +111,13 @@ if [ "$(id -u)" -eq 0 ]; then
     MINUTE=$((RANDOM % 60))
     cat > /etc/cron.d/pingpong-machine <<CRON
 # The machine agent of PingPong: https://github.com/kobalt-digital/pingpong-agent
-* * * * * pingpong-machine $PHP $LIBRARY/pingpong-machine.phar tick >/dev/null 2>&1
-$MINUTE 4 * * * root $PHP $LIBRARY/pingpong-machine.phar self-update >/dev/null 2>&1
+* * * * * pingpong-machine $PHP $AGENT/pingpong-machine.phar tick >/dev/null 2>&1
+$MINUTE 4 * * * pingpong-machine $PHP $AGENT/pingpong-machine.phar self-update >/dev/null 2>&1
 CRON
     chmod 0644 /etc/cron.d/pingpong-machine
 
     echo "Installed for the whole machine. Sending the first tick..."
-    runuser -u pingpong-machine -- "$PHP" "$LIBRARY/pingpong-machine.phar" tick && echo "PingPong took it."
+    runuser -u pingpong-machine -- "$PHP" "$AGENT/pingpong-machine.phar" tick --without-sites && echo "PingPong took it. The sites are measured by the next run of cron."
 else
     LIBRARY="$HOME/.local/lib/pingpong-machine"
     CONFIG="$HOME/.config/pingpong-machine"
@@ -127,5 +135,5 @@ else
     } | crontab -
 
     echo "Installed for $(id -un). Sending the first tick..."
-    "$PHP" "$LIBRARY/pingpong-machine.phar" tick && echo "PingPong took it."
+    "$PHP" "$LIBRARY/pingpong-machine.phar" tick --without-sites && echo "PingPong took it. The sites are measured by the next run of cron."
 fi

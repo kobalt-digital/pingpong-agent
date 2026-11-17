@@ -31,16 +31,19 @@ sends under it.
 
 | What | Where |
 |---|---|
-| The phar | `/usr/local/lib/pingpong-machine/pingpong-machine.phar` |
+| The phar (owned by `pingpong-machine`) | `/usr/local/lib/pingpong-machine/agent/pingpong-machine.phar` |
 | The config (key and URL, 0640) | `/etc/pingpong-machine/config.json` |
 | What it remembers between runs | `/var/lib/pingpong-machine` |
-| Cron | `/etc/cron.d/pingpong-machine`: `tick` every minute as the system user `pingpong-machine`, `self-update` once a day as root |
+| Cron | `/etc/cron.d/pingpong-machine`: `tick` every minute and `self-update` once a day, both as the system user `pingpong-machine`, never as root |
 
 It runs as the unprivileged user `pingpong-machine`. To measure sites in home
 directories that are closed to others (Forge's site isolation), it gets a copy
-of `du` with the one capability to read every folder
-(`cap_dac_read_search`), executable only by root and that user. Without
-`setcap` (package `libcap2-bin`) those sites are not measured.
+of `du` with the capability to read every file (`cap_dac_read_search`),
+owned by root and executable only by root and that user. That reaches further
+than folder sizes, which is why nothing else runs it. Without `setcap`
+(package `libcap2-bin`) those sites are not measured. The first scan of the
+sites waits for the first run of cron, so the installer does not sit through
+it.
 
 **Without root** (shared hosting) it installs for you alone, in
 `~/.local/lib/pingpong-machine`, `~/.config/pingpong-machine` and your crontab.

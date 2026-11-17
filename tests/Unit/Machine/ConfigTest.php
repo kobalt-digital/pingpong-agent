@@ -32,3 +32,14 @@ it('takes the mode and the roots of the sites from the file', function () {
         ->and(Config::parse('{"url": "https://pingpong.example", "key": "k", "mode": "user"}', '/default', system: true)->system)->toBeFalse()
         ->and(Config::parse('{"url": "https://pingpong.example", "key": "k"}', '/default', system: true)->system)->toBeTrue();
 });
+
+it('never sends the key in the clear, except to this machine', function (string $url, bool $accepted) {
+    $parse = fn () => Config::parse(json_encode(['url' => $url, 'key' => 'k']), '/default');
+
+    $accepted ? expect($parse()->url)->toBe($url) : expect($parse)->toThrow(RuntimeException::class);
+})->with([
+    'https' => ['https://pingpong.example', true],
+    'http elsewhere' => ['http://pingpong.example', false],
+    'http to this machine' => ['http://127.0.0.1:8000', true],
+    'http to localhost' => ['http://localhost', true],
+]);

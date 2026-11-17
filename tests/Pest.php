@@ -224,7 +224,7 @@ function fakeDu(string $output, ?string $slowFolder = null): string
     file_put_contents($script, <<<SH
     #!/bin/sh
     for last; do :; done
-    awk -F '\t' -v p="\$last" '\$2 == p || index(\$2, p "/") == 1' '{$data}'
+    awk -F '\t' -v p="\$last" '\$2 == p || index(\$2, p "/") == 1' '{$data}' | tr '\\n' '\\000'
     if [ "\$last" = "{$slowFolder}" ]; then sleep 5; fi
 
     SH);

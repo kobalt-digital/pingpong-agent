@@ -127,7 +127,8 @@ class ProcessTable
         $cmdline = str_replace("\0", ' ', $cmdline);
 
         if (preg_match('/^php-fpm[^:]*: pool (\S+)/', $cmdline, $match) === 1) {
-            return 'php-fpm: '.$match[1];
+            /* PingPong keeps a name to 64 characters; a pool named after a long domain must not cost the tick. */
+            return 'php-fpm: '.substr($match[1], 0, 55);
         }
 
         if (preg_match('/^php-fpm[^:]*: master/', $cmdline) === 1) {

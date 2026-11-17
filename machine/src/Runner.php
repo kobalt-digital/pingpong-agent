@@ -14,7 +14,7 @@ class Runner
      * @param  (callable(string): void)|null  $onLine  gets every line of stdout, without its newline
      * @return array{exit: int, output: string, timed_out: bool}|null null when it could not start
      */
-    public function run(array $command, int $timeoutSeconds, ?callable $onLine = null): ?array
+    public function run(array $command, int $timeoutSeconds, ?callable $onLine = null, string $separator = "\n"): ?array
     {
         if (! function_exists('proc_open')) {
             return null;
@@ -71,7 +71,7 @@ class Runner
 
             $pending .= $chunk;
 
-            while (($newline = strpos($pending, "\n")) !== false) {
+            while (($newline = strpos($pending, $separator)) !== false) {
                 $onLine(substr($pending, 0, $newline));
                 $pending = substr($pending, $newline + 1);
             }

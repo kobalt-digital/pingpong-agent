@@ -68,9 +68,9 @@ it('loses only the folder du ran out of time on', function () {
 
     $runner = new class extends Runner
     {
-        public function run(array $command, int $timeoutSeconds, ?callable $onLine = null): ?array
+        public function run(array $command, int $timeoutSeconds, ?callable $onLine = null, string $separator = "\n"): ?array
         {
-            return parent::run($command, 1, $onLine);
+            return parent::run($command, 1, $onLine, $separator);
         }
     };
 
@@ -138,4 +138,16 @@ it('measures every database in the data directory of MySQL', function () {
         ['name' => 'shop', 'bytes' => 900 * 1024],
         ['name' => 'my-blog', 'bytes' => 300 * 1024],
     ])->and(siteSizes()->databases($du, '/does/not/exist'))->toBeNull();
+});
+
+it('never reads a folder name as the size of another folder', function () {
+    $root = siteRoot(['evil']);
+
+    /* Folders inside folders, so the path du prints holds a line of its own. */
+    mkdir("{$root}/evil/a\n999999999\t{$root}/ghost", 0755, true);
+
+    $sites = array_column(siteSizes()->sites([$root], (new Runner)->find('du'))['entries'], 'bytes', 'path');
+
+    expect($sites)->not->toHaveKey("{$root}/ghost")
+        ->and($sites)->toHaveKey("{$root}/evil");
 });
