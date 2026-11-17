@@ -125,7 +125,7 @@ class Supervisor implements Collector
                 'uptime_seconds' => $line['status'] === 'RUNNING' ? $this->uptime($line['description']) : null,
                 'own' => $own,
                 'command' => $command,
-                'display_name' => $own === true ? $this->displayName($command, $forgeId) : null,
+                'display_name' => $command === null ? null : explode(' ', $command, 2)[0],
                 'display_id' => $own === true && $forgeId !== null && strlen($forgeId) <= self::MAX_LENGTH ? $forgeId : null,
             ];
         }
@@ -238,20 +238,6 @@ class Supervisor implements Collector
         }
 
         return [$basePath, $match[1], "{$match[1]}/current"];
-    }
-
-    /** Name the role from the configured command without publishing its arguments. */
-    private function displayName(?string $command, ?string $forgeId): ?string
-    {
-        return match (strtok($command ?? '', ' ')) {
-            'horizon' => 'Laravel Horizon',
-            'queue:work', 'queue:listen' => 'Queue worker',
-            'reverb:start' => 'Laravel Reverb',
-            'schedule:work' => 'Laravel Scheduler',
-            'octane:start' => 'Laravel Octane',
-            'inertia:start-ssr' => 'Inertia SSR',
-            default => $forgeId === null ? null : 'Supervisor daemon',
-        };
     }
 
     /**
