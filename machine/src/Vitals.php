@@ -10,7 +10,7 @@ use KobaltDigital\PingPong\Host;
  * and the host facts (uptime, a reboot it waits for, pending updates).
  *
  * Only the methods of `Host` that read a file or parse text are used here;
- * the ones that go through a Laravel facade (`inodes`, `upgradablePackages`,
+ * the ones that go through a Laravel facade (`inodes`, `upgradable`,
  * `fleet`) are done with the Runner instead, since the phar has no Laravel.
  */
 class Vitals
@@ -38,11 +38,16 @@ class Vitals
     }
 
     /**
+     * Ubuntu's update-notifier counts the updates; where it does not run
+     * (Debian, a minimal Ubuntu) apt counts them, as `HostState` does.
+     *
      * @return array{uptime_seconds: ?int, reboot_required: ?bool, reboot_packages: ?list<string>, updates_pending: ?int, updates_security: ?int, update_packages: ?list<array{name: string, version: ?string, security: bool}>}
      */
     public function host(State $state): array
     {
         $updates = $this->host->updates();
+        $upgradable = $updates === null || $updates['pending'] > 0 ? $this->upgradable($state) : null;
+        $updates ??= $upgradable === null ? null : ['pending' => $upgradable['pending'], 'security' => $upgradable['security']];
 
         return [
             'uptime_seconds' => $this->host->uptime(),
@@ -50,7 +55,7 @@ class Vitals
             'reboot_packages' => $this->host->rebootPackages(),
             'updates_pending' => $updates['pending'] ?? null,
             'updates_security' => $updates['security'] ?? null,
-            'update_packages' => ($updates['pending'] ?? 0) > 0 ? $this->updatePackages($state) : null,
+            'update_packages' => ($updates['pending'] ?? 0) > 0 ? ($upgradable['packages'] ?? null) : null,
         ];
     }
 
@@ -97,24 +102,24 @@ class Vitals
 
     /**
      * `apt list --upgradable` takes a moment, so its answer is kept until
-     * update-notifier counts again (whenever apt's lists or the installed
-     * packages change).
+     * the updates change (`Host::updatesStamp()`: apt's lists or the
+     * installed packages). Null where apt is missing or has no lists.
      *
-     * @return list<array{name: string, version: ?string, security: bool}>|null
+     * @return array{pending: int, security: int, packages: list<array{name: string, version: ?string, security: bool}>}|null
      */
-    private function updatePackages(State $state): ?array
+    private function upgradable(State $state): ?array
     {
         $stamp = $this->host->updatesStamp();
-        $remembered = $state->get('update_packages');
+        $remembered = $state->get('upgradable');
 
-        if ($stamp !== null && is_array($remembered) && ($remembered['stamp'] ?? null) === $stamp && is_array($remembered['packages'] ?? null)) {
-            /** @var list<array{name: string, version: ?string, security: bool}> */
-            return $remembered['packages'];
+        if ($stamp !== null && is_array($remembered) && ($remembered['stamp'] ?? null) === $stamp && is_array($remembered['upgradable'] ?? null)) {
+            /** @var array{pending: int, security: int, packages: list<array{name: string, version: ?string, security: bool}>} */
+            return $remembered['upgradable'];
         }
 
         $apt = $this->runner->find('apt');
 
-        if ($apt === null) {
+        if ($apt === null || ! $this->host->hasAptLists()) {
             return null;
         }
 
@@ -124,12 +129,12 @@ class Vitals
             return null;
         }
 
-        $packages = $this->host->parseUpgradable($result['output']);
+        $upgradable = $this->host->parseUpgradableSummary($result['output']);
 
         if ($stamp !== null) {
-            $state->set('update_packages', ['stamp' => $stamp, 'packages' => $packages]);
+            $state->set('upgradable', ['stamp' => $stamp, 'upgradable' => $upgradable]);
         }
 
-        return $packages;
+        return $upgradable;
     }
 }

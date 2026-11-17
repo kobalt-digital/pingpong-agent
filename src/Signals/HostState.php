@@ -11,10 +11,12 @@ use Throwable;
  * How long the machine has been up, whether it waits for a reboot and which
  * package updates wait, so PingPong can tell a server that needs care.
  *
- * The updates by name come from `apt list --upgradable`, which takes a
- * moment, so it runs only while updates are pending and is remembered until
- * update-notifier counts again (apt does so whenever its lists or the
- * installed packages change), for a day at most.
+ * Ubuntu's update-notifier counts the updates. Where it does not run
+ * (Debian, a minimal Ubuntu) apt counts them. The updates by name come from
+ * `apt list --upgradable`, which takes a moment, so it runs only while
+ * updates are pending, or to count them, and is remembered until the updates
+ * change (`Host::updatesStamp()`: apt's lists or the installed packages), for
+ * a day at most.
  */
 class HostState implements MachineSignal
 {
@@ -31,6 +33,8 @@ class HostState implements MachineSignal
     public function collect(): ?array
     {
         $updates = $this->host->updates();
+        $upgradable = $updates === null || $updates['pending'] > 0 ? $this->upgradable() : null;
+        $updates ??= $upgradable === null ? null : ['pending' => $upgradable['pending'], 'security' => $upgradable['security']];
 
         $state = [
             'uptime_seconds' => $this->host->uptime(),
@@ -38,7 +42,7 @@ class HostState implements MachineSignal
             'reboot_packages' => $this->host->rebootPackages(),
             'updates_pending' => $updates['pending'] ?? null,
             'updates_security' => $updates['security'] ?? null,
-            'update_packages' => ($updates['pending'] ?? 0) > 0 ? $this->updatePackages() : null,
+            'update_packages' => ($updates['pending'] ?? 0) > 0 ? ($upgradable['packages'] ?? null) : null,
         ];
 
         if (array_filter($state, fn (mixed $value): bool => $value !== null) === []) {
@@ -48,38 +52,38 @@ class HostState implements MachineSignal
         return $state;
     }
 
-    /** @return list<array{name: string, version: ?string, security: bool}>|null */
-    private function updatePackages(): ?array
+    /** @return array{pending: int, security: int, packages: list<array{name: string, version: ?string, security: bool}>}|null */
+    private function upgradable(): ?array
     {
         $stamp = $this->host->updatesStamp();
 
         if ($this->cache === null || $stamp === null) {
-            return $this->host->upgradablePackages();
+            return $this->host->upgradable();
         }
 
-        $key = "pingpong-agent:update-packages:{$stamp}";
+        $key = "pingpong-agent:upgradable:{$stamp}";
 
         try {
             $remembered = $this->cache->get($key);
         } catch (Throwable) {
-            return $this->host->upgradablePackages();
+            return $this->host->upgradable();
         }
 
-        if (is_array($remembered)) {
-            /** @var list<array{name: string, version: ?string, security: bool}> $remembered */
+        if (is_array($remembered) && isset($remembered['pending'], $remembered['security'], $remembered['packages'])) {
+            /** @var array{pending: int, security: int, packages: list<array{name: string, version: ?string, security: bool}>} $remembered */
             return $remembered;
         }
 
-        $packages = $this->host->upgradablePackages();
+        $upgradable = $this->host->upgradable();
 
-        if ($packages !== null) {
+        if ($upgradable !== null) {
             try {
-                $this->cache->put($key, $packages, self::UPDATE_PACKAGES_TTL_SECONDS);
+                $this->cache->put($key, $upgradable, self::UPDATE_PACKAGES_TTL_SECONDS);
             } catch (Throwable) {
-                return $packages;
+                return $upgradable;
             }
         }
 
-        return $packages;
+        return $upgradable;
     }
 }

@@ -26,16 +26,16 @@ it('reports the uptime, the reboot and the updates of the host', function () {
         ]);
 });
 
-it('lists the updates by name only while some are pending, and asks apt once until update-notifier counts again', function () {
+it('lists the updates by name only while some are pending, and asks apt once until the updates change', function () {
     $host = new class(updates: ['pending' => 2, 'security' => 1]) extends FakeHost
     {
         public int $asked = 0;
 
-        public function upgradablePackages(): ?array
+        public function upgradable(): ?array
         {
             $this->asked++;
 
-            return parent::upgradablePackages();
+            return parent::upgradable();
         }
     };
     $signal = new HostState($host, app(Repository::class));
@@ -47,8 +47,24 @@ it('lists the updates by name only while some are pending, and asks apt once unt
         ->and((new HostState(new FakeHost(updates: ['pending' => 0, 'security' => 0])))->collect()['update_packages'])->toBeNull();
 });
 
+it('counts the updates with apt where update-notifier does not run', function () {
+    $signal = new HostState(new FakeHost(osName: 'Debian GNU/Linux 13 (trixie)', updates: null, updatePackages: [
+        ['name' => 'libssl3t64', 'version' => '3.5.1-1+deb13u1', 'security' => true],
+        ['name' => 'nginx', 'version' => '1.26.3-3+deb13u1', 'security' => false],
+    ]));
+
+    expect($signal->collect())->toMatchArray([
+        'updates_pending' => 2,
+        'updates_security' => 1,
+        'update_packages' => [
+            ['name' => 'libssl3t64', 'version' => '3.5.1-1+deb13u1', 'security' => true],
+            ['name' => 'nginx', 'version' => '1.26.3-3+deb13u1', 'security' => false],
+        ],
+    ]);
+});
+
 it('sends null for what the host cannot tell', function () {
-    $signal = new HostState(new FakeHost(uptime: 120, rebootRequired: null, rebootPackages: null, updates: null));
+    $signal = new HostState(new FakeHost(uptime: 120, rebootRequired: null, rebootPackages: null, updates: null, updatePackages: null));
 
     expect($signal->collect())->toBe([
         'uptime_seconds' => 120,
@@ -61,7 +77,7 @@ it('sends null for what the host cannot tell', function () {
 });
 
 it('gives nothing when the host can tell none of it', function () {
-    $signal = new HostState(new FakeHost(uptime: null, rebootRequired: null, rebootPackages: null, updates: null));
+    $signal = new HostState(new FakeHost(uptime: null, rebootRequired: null, rebootPackages: null, updates: null, updatePackages: null));
 
     expect($signal->collect())->toBeNull();
 });

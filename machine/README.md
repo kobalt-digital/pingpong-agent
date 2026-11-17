@@ -63,9 +63,10 @@ Running the installer again replaces the key and the phar.
 - the machine: load, memory, CPU time, pressure stall information, and the
   free space and inodes of `/` (of your home directory without root), read
   exactly as the Laravel agent reads them;
-- the host: uptime, a reboot it waits for, pending updates and, while there
-  are any, the packages by name (`apt list --upgradable`, only when
-  update-notifier counted again);
+- the host: uptime, a reboot it waits for, pending updates (Ubuntu's
+  update-notifier, else `apt list --upgradable`, so Debian too) and, while
+  there are any, the packages by name (`apt list --upgradable`, run again
+  only when apt's lists or the installed packages changed);
 - the processes per Unix user: how many, the CPU seconds they used since the
   previous tick, their memory and swap, and their four most common names.
   Only the eight busiest users, the four largest and the two that swap most
