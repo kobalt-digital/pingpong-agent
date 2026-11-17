@@ -19,9 +19,10 @@ namespace KobaltDigital\PingPong\Machine;
  * deeper down (`releases/20261117/vendor`), from `DEEP_MIN_BYTES`, so what
  * fills a site can be opened folder by folder. `du` counts them anyway, so
  * this costs no reading of the disk. A folder is never larger than the one
- * holding it, so taking the largest first never sends a folder without the
- * one above it, and the folders kept above can never be pushed out by
- * them. Nothing in or under a hidden folder (`.git`, `.ssh`, `.config`) is
+ * holding it, so in a scan that finished, taking the largest first never
+ * sends a folder without the one above it (a folder `du` ran out of time on
+ * can leave children without it), and the folders kept above can never be
+ * pushed out by them. Nothing in or under a hidden folder (`.git`, `.ssh`, `.config`) is
  * sent from deeper down: those names tell more about a user than a site.
  */
 class SiteSizes
