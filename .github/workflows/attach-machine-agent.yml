@@ -1,0 +1,35 @@
+name: "Attach machine agent"
+
+# Servers take the machine agent from the newest release, never from a
+# branch: this attaches the phar the tagged commit holds, and its checksum.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout the released commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Check the phar against its checksum
+        working-directory: machine/dist
+        run: sha256sum -c pingpong-machine.phar.sha256
+
+      - name: Check the phar runs
+        run: php machine/dist/pingpong-machine.phar version
+
+      - name: Attach the phar to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" machine/dist/pingpong-machine.phar machine/dist/pingpong-machine.phar.sha256 --clobber

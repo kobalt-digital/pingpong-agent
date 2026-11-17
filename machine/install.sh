@@ -17,7 +17,9 @@
 
 set -euo pipefail
 
-BASE="${PINGPONG_DIST:-https://raw.githubusercontent.com/kobalt-digital/pingpong-agent/main/machine/dist}"
+# The phar of the newest release, never of a branch: what reaches a server
+# is what someone released.
+BASE="${PINGPONG_DIST:-https://github.com/kobalt-digital/pingpong-agent/releases/latest/download}"
 URL="${PINGPONG_URL:-}"
 KEY="${PINGPONG_KEY:-}"
 PHP="${PINGPONG_PHP:-}"
@@ -51,15 +53,33 @@ download() {
     fi
 }
 
-# Downloads the phar into the given directory and checks it against its checksum.
+# Where the download waits for its checks; removed however the script ends.
+TEMPORARY=""
+trap '[ -z "$TEMPORARY" ] || rm -rf "$TEMPORARY"' EXIT
+
+# Downloads the phar into the given directory, checks it against its
+# checksum and that it names its version within 30 seconds, as self-update
+# does.
 fetch_phar() {
-    local directory="$1" temporary
-    temporary="$(mktemp -d)"
-    download "$BASE/pingpong-machine.phar" "$temporary/pingpong-machine.phar"
-    download "$BASE/pingpong-machine.phar.sha256" "$temporary/pingpong-machine.phar.sha256"
-    (cd "$temporary" && sha256sum -c --quiet pingpong-machine.phar.sha256)
-    install -m 0755 "$temporary/pingpong-machine.phar" "$directory/pingpong-machine.phar"
-    rm -rf "$temporary"
+    local directory="$1" version
+    TEMPORARY="$(mktemp -d)"
+    download "$BASE/pingpong-machine.phar" "$TEMPORARY/pingpong-machine.phar"
+    download "$BASE/pingpong-machine.phar.sha256" "$TEMPORARY/pingpong-machine.phar.sha256"
+    (cd "$TEMPORARY" && sha256sum -c --quiet pingpong-machine.phar.sha256)
+    if ! command -v timeout >/dev/null; then
+        echo "The installer needs timeout (coreutils) to try the machine agent before installing it." >&2
+        exit 1
+    fi
+    # It has to end well within 30 seconds (a kill a second later if it
+    # ignores the first signal) and name its version, as self-update asks.
+    if ! version="$(timeout --kill-after=1s 30s "$PHP" "$TEMPORARY/pingpong-machine.phar" version 2>/dev/null)" \
+        || ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        echo "The downloaded machine agent does not run with $PHP." >&2
+        exit 1
+    fi
+    install -m 0755 "$TEMPORARY/pingpong-machine.phar" "$directory/pingpong-machine.phar"
+    rm -rf "$TEMPORARY"
+    TEMPORARY=""
 }
 
 # Writes the config as JSON, with PHP so the key needs no escaping by hand.
