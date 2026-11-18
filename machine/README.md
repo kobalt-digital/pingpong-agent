@@ -54,6 +54,12 @@ server.
 
 Running the installer again replaces the key and the phar.
 
+For an existing system install, run the installer again as root with the
+same server key after updating Pingpong and releasing the new agent. This adds
+the journal collector and its cron entry. Nightly self-update only replaces
+the phar. On a system with `journalctl`, the collector exports recent kernel
+OOM kills and the agent reports them with its minute tick.
+
 ## What it sends
 
 **Every minute, a tick** to `POST /api/machine/tick`:

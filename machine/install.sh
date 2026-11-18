@@ -138,10 +138,16 @@ set -eu
 export LC_ALL=C
 umask 077
 snapshot="$(mktemp /etc/pingpong-machine/oom-kills.XXXXXX)"
-trap 'rm -f "$snapshot"' EXIT
+diagnostics="$snapshot.stderr"
+trap 'rm -f "$snapshot" "$diagnostics"' EXIT
+status=0
 timeout --kill-after=1s 5s journalctl --quiet --no-pager --since '24 hours ago' \
     --reverse --lines=200 --output=json --output-fields=MESSAGE --case-sensitive=yes \
-    --grep '^(Memory cgroup out of memory|Out of memory): Killed process ' _TRANSPORT=kernel > "$snapshot"
+    --grep '^(Memory cgroup out of memory|Out of memory): Killed process ' _TRANSPORT=kernel > "$snapshot" 2>"$diagnostics" || status=$?
+if [ "$status" -ne 0 ] && { [ "$status" -ne 1 ] || [ -s "$diagnostics" ]; }; then
+    cat "$diagnostics" >&2
+    exit "$status"
+fi
 chgrp pingpong-machine "$snapshot"
 chmod 0640 "$snapshot"
 mv -f "$snapshot" /etc/pingpong-machine/oom-kills.jsonl
