@@ -46,6 +46,33 @@ class Users
     {
         $users = [];
 
+        foreach ($this->passwdEntries($contents) as $uid => $name) {
+            $users[$uid] ??= $name;
+        }
+
+        return $users;
+    }
+
+    /** @return list<string>|null */
+    public function localAccounts(): ?array
+    {
+        $contents = @file_get_contents($this->passwdFile);
+
+        if ($contents === false) {
+            return null;
+        }
+
+        $names = array_filter(
+            iterator_to_array($this->passwdEntries($contents), false),
+            fn (string $name): bool => preg_match('/\A[^\x00]{1,64}\z/u', $name) === 1,
+        );
+
+        return array_values(array_unique($names));
+    }
+
+    /** @return iterable<int, string> */
+    private function passwdEntries(string $contents): iterable
+    {
         foreach (preg_split('/\R/', $contents) ?: [] as $line) {
             $fields = explode(':', $line);
 
@@ -53,10 +80,8 @@ class Users
                 continue;
             }
 
-            $users[(int) $fields[2]] ??= $fields[0];
+            yield (int) $fields[2] => $fields[0];
         }
-
-        return $users;
     }
 
     private function lookUp(int $uid): string

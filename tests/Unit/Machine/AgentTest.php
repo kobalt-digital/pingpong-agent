@@ -37,10 +37,10 @@ class RecordingClient extends Client
     }
 }
 
-function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $du = null, ?string $oomJournal = null, bool $system = false): Agent
+function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $du = null, ?string $oomJournal = null, bool $system = false, ?string $passwd = null): Agent
 {
     $runner = new Runner;
-    $users = new Users;
+    $users = $passwd === null ? new Users : new Users($passwd, usePosix: false);
     $proc ??= fakeProc([10 => ['stat' => statLine(10, 'php', 100, 0, 100, 10)]]);
 
     return new Agent(
@@ -114,6 +114,34 @@ it('sends recent unique kernel kills only from a system installation', function 
             unlink($journal);
         }
     }
+});
+
+it('sends local account names on the first successful system tick and once an hour', function () {
+    $state = stateDirectory();
+    mkdir($state);
+    $passwd = $state.'/passwd';
+    $unsupportedName = str_repeat('x', 65);
+    file_put_contents($passwd, implode("\n", [
+        'root:x:0:0::/root:/bin/bash',
+        'shop:x:1000:1000::/home/shop:/bin/bash',
+        'backup:x:1000:1000::/home/backup:/bin/bash',
+        'shop:x:1000:1000::/home/shop:/bin/bash',
+        "{$unsupportedName}:x:1001:1001::/home/unsupported:/bin/bash",
+    ]));
+
+    $offline = new RecordingClient(503);
+    machineAgent($offline, $state, system: true, passwd: $passwd)->tick(940.0);
+
+    $client = new RecordingClient;
+    machineAgent($client, $state, system: true, passwd: $passwd)->tick(1000.0);
+    machineAgent($client, $state, system: true, passwd: $passwd)->tick(4599.0);
+    machineAgent($client, $state, system: true, passwd: $passwd)->tick(4600.0);
+    machineAgent($client, stateDirectory(), passwd: $passwd)->tick(4600.0);
+
+    expect($client->posts[0]['payload']['unix_users'])->toBe(['root', 'shop', 'backup'])
+        ->and($client->posts[1]['payload'])->not->toHaveKey('unix_users')
+        ->and($client->posts[2]['payload']['unix_users'])->toBe(['root', 'shop', 'backup'])
+        ->and($client->posts[3]['payload'])->not->toHaveKey('unix_users');
 });
 
 it('measures the CPU of the second tick against the first', function () {

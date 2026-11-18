@@ -17,6 +17,9 @@ class Agent
 
     public const SCHEMA = 1;
 
+    /** How often a system installation reports its local account inventory. */
+    public const UNIX_USERS_EVERY_SECONDS = 3600;
+
     /** How often the sites are measured on their own. */
     public const SITES_EVERY_SECONDS = 3600;
 
@@ -69,6 +72,10 @@ class Agent
         }
 
         $gap = $this->state->get('unreachable');
+        $lastInventory = $this->state->get('unix_users_sent_at');
+        $unixUsers = $this->config->system && (! is_int($lastInventory) || $now - $lastInventory >= self::UNIX_USERS_EVERY_SECONDS)
+            ? $this->users->localAccounts()
+            : null;
 
         $response = $this->client->post('api/machine/tick', [
             ...$this->envelope($now),
@@ -77,9 +84,14 @@ class Agent
             'processes' => $processes,
             'oom_kill_events' => $this->config->system ? $this->vitals->oomKills((int) $now) : [],
             'connectivity' => is_array($gap) ? $gap : null,
+            ...($unixUsers === null ? [] : ['unix_users' => $unixUsers]),
         ]);
 
         $sent = $response !== null && $response['status'] >= 200 && $response['status'] < 300;
+        if ($sent && $unixUsers !== null) {
+            $this->state->set('unix_users_sent_at', (int) $now);
+        }
+
         $this->rememberReach($response, $now);
         $this->state->save();
 
