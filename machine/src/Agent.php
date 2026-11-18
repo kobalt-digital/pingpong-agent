@@ -75,6 +75,7 @@ class Agent
             'signals' => array_filter($signals, fn (mixed $signal): bool => $signal !== null),
             'host' => $this->vitals->host($this->state),
             'processes' => $processes,
+            'oom_kill_events' => $this->config->system ? $this->vitals->oomKills((int) $now) : [],
             'connectivity' => is_array($gap) ? $gap : null,
         ]);
 
