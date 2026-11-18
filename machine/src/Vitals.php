@@ -19,7 +19,21 @@ class Vitals
 
     public const APT_TIMEOUT_SECONDS = 10;
 
-    public function __construct(private Host $host, private Runner $runner) {}
+    public function __construct(
+        private Host $host,
+        private Runner $runner,
+        private string $oomJournal = '/etc/pingpong-machine/oom-kills.jsonl',
+    ) {}
+
+    /**
+     * Read the recent kernel kills exported by the system installer's collector.
+     *
+     * @return list<array{at: int, pid: int, process: string, scope: string, uid: ?int, rss_bytes: int}>
+     */
+    public function oomKills(int $now): array
+    {
+        return (new OomKills)->read($this->oomJournal, $now);
+    }
 
     /**
      * @return array{load: ?array{'1m': float, '5m': float, '15m': float}, memory: ?array<string, ?int>, cpu: ?array<string, int>, pressure: ?array<string, ?float>, disk: ?array{free_bytes: int, total_bytes: int, inodes_total: ?int, inodes_free: ?int}}

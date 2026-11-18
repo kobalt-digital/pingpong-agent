@@ -128,9 +128,39 @@ if [ "$(id -u)" -eq 0 ]; then
         echo "setcap is missing (apt install libcap2-bin): sites in home directories closed to others are not measured." >&2
     fi
 
+    OOM_CRON=""
+    if command -v journalctl >/dev/null; then
+        # Keep the collector and its output in root-owned directories. The
+        # self-updating agent can read only the filtered journal snapshot.
+        cat > "$LIBRARY/collect-oom-kills" <<'COLLECTOR'
+#!/bin/sh
+set -eu
+export LC_ALL=C
+umask 077
+snapshot="$(mktemp /etc/pingpong-machine/oom-kills.XXXXXX)"
+diagnostics="$snapshot.stderr"
+trap 'rm -f "$snapshot" "$diagnostics"' EXIT
+status=0
+timeout --kill-after=1s 5s journalctl --quiet --no-pager --since '24 hours ago' \
+    --reverse --lines=200 --output=json --output-fields=MESSAGE --case-sensitive=yes \
+    --grep '^(Memory cgroup out of memory|Out of memory): Killed process ' _TRANSPORT=kernel > "$snapshot" 2>"$diagnostics" || status=$?
+if [ "$status" -ne 0 ] && { [ "$status" -ne 1 ] || [ -s "$diagnostics" ]; }; then
+    cat "$diagnostics" >&2
+    exit "$status"
+fi
+chgrp pingpong-machine "$snapshot"
+chmod 0640 "$snapshot"
+mv -f "$snapshot" /etc/pingpong-machine/oom-kills.jsonl
+COLLECTOR
+        chmod 0750 "$LIBRARY/collect-oom-kills"
+        OOM_CRON="* * * * * root $LIBRARY/collect-oom-kills >/dev/null 2>&1"
+        "$LIBRARY/collect-oom-kills" || echo "Could not read OOM kills from the kernel journal." >&2
+    fi
+
     MINUTE=$((RANDOM % 60))
     cat > /etc/cron.d/pingpong-machine <<CRON
 # The machine agent of PingPong: https://github.com/kobalt-digital/pingpong-agent
+$OOM_CRON
 * * * * * pingpong-machine $PHP $AGENT/pingpong-machine.phar tick >/dev/null 2>&1
 $MINUTE 4 * * * pingpong-machine $PHP $AGENT/pingpong-machine.phar self-update >/dev/null 2>&1
 CRON

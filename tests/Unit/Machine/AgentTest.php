@@ -37,17 +37,17 @@ class RecordingClient extends Client
     }
 }
 
-function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $du = null): Agent
+function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $du = null, ?string $oomJournal = null, bool $system = false): Agent
 {
     $runner = new Runner;
     $users = new Users;
     $proc ??= fakeProc([10 => ['stat' => statLine(10, 'php', 100, 0, 100, 10)]]);
 
     return new Agent(
-        new Config('https://pingpong.test', 'pp_machine_test', $stateDirectory, $du),
+        new Config('https://pingpong.test', 'pp_machine_test', $stateDirectory, $du, $system),
         $client,
         new State($stateDirectory),
-        new Vitals(new Host, $runner),
+        $oomJournal === null ? new Vitals(new Host, $runner) : new Vitals(new Host, $runner, $oomJournal),
         new ProcessTable($proc),
         new ProcessReport($users),
         new SiteSizes($runner, $users),
@@ -74,6 +74,46 @@ it('sends who it is, the machine and its processes in one tick', function () {
         ->and($payload['sent_at'])->toBe('1970-01-01T00:16:40Z')
         ->and($payload['processes']['process_count'])->toBe(1)
         ->and($payload['processes']['users'][0]['names'])->toBe([['name' => 'php', 'count' => 1]]);
+});
+
+it('sends recent unique kernel kills only from a system installation', function () {
+    $state = stateDirectory();
+    mkdir($state);
+    $journal = $state.'/oom-kills.jsonl';
+    $client = new RecordingClient;
+    $now = 1_795_000_000;
+    $timestamp = ($now - 60) * 1_000_000;
+    $cgroup = 'Memory cgroup out of memory: Killed process 1163265 (php) total-vm:145664kB, anon-rss:48876kB, file-rss:21388kB, shmem-rss:0kB, UID:100032 pgtables:248kB oom_score_adj:968';
+    $host = 'Out of memory: Killed process 42 (worker (queue)) total-vm:145664kB, anon-rss:12kB, file-rss:8kB, shmem-rss:2kB';
+    $entries = [
+        [$timestamp + 20, $cgroup],
+        [$timestamp + 10, $cgroup],
+        [$timestamp, $host],
+        [($now - 86401) * 1_000_000, $cgroup],
+        [$timestamp, 'Another kernel message'],
+    ];
+
+    file_put_contents($journal, implode("\n", array_map(fn (array $entry): string => json_encode([
+        '__REALTIME_TIMESTAMP' => (string) $entry[0],
+        'MESSAGE' => $entry[1],
+    ], JSON_THROW_ON_ERROR), $entries)));
+
+    try {
+        machineAgent($client, $state, oomJournal: $journal, system: true)->tick((float) $now);
+        machineAgent($client, $state, oomJournal: $journal)->tick((float) $now);
+        unlink($journal);
+        machineAgent($client, $state, oomJournal: $journal, system: true)->tick((float) $now);
+
+        expect($client->posts[0]['payload']['oom_kill_events'])->toBe([
+            ['at' => $timestamp + 20, 'pid' => 1163265, 'process' => 'php', 'scope' => 'cgroup', 'uid' => 100032, 'rss_bytes' => 71_950_336],
+            ['at' => $timestamp, 'pid' => 42, 'process' => 'worker (queue)', 'scope' => 'host', 'uid' => null, 'rss_bytes' => 22_528],
+        ])->and($client->posts[1]['payload']['oom_kill_events'])->toBe([])
+            ->and($client->posts[2]['payload']['oom_kill_events'])->toBe([]);
+    } finally {
+        if (is_file($journal)) {
+            unlink($journal);
+        }
+    }
 });
 
 it('measures the CPU of the second tick against the first', function () {
