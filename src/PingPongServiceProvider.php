@@ -38,6 +38,9 @@ class PingPongServiceProvider extends PackageServiceProvider
 
         // Resolved once per process, so a bad interval is warned about once.
         $this->app->singleton(TickInterval::class);
+
+        // Holds what the app registered with PingPong::metric() until the tick reads it.
+        $this->app->singleton(Metrics::class);
     }
 
     public function packageBooted(): void
