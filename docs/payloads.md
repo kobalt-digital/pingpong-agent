@@ -444,6 +444,28 @@ The facts about the app are read every tick. Flare itself is asked about the key
 | `key_checked_at` | string or null | ISO 8601 time of the last key check. `null` without a key |
 | `error` | string or null | Why the last key check could not tell, for example a timeout or a 5xx |
 
+### `signals.metrics`
+
+The app's own numbers, registered with `PingPong::metric()` and read once per tick on the server that ticks. Left out while the app registered none; `values` is empty when it registered some and none read a usable number. Not a configured collector, so an app with a published `signals` list sends it too.
+
+```json
+"metrics": {
+  "values": [
+    {"name": "orders.pending", "value": 12, "unit": "count"},
+    {"name": "import.lag", "value": 1.5, "unit": "seconds"}
+  ]
+}
+```
+
+| Key | Type | Meaning |
+|---|---|---|
+| `values` | array | At most 20 entries, one per registered metric that read a usable number |
+| `values[].name` | string | Lower case words split by dots (`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$`), at most 64 characters, unique within the tick |
+| `values[].value` | integer or float | A finite number, at most `1e15` either side of zero |
+| `values[].unit` | string | `count`, `percent`, `ms`, `seconds` or `bytes` |
+
+The Agent refuses a name or unit outside these rules when it is registered, and a registration beyond 20, with a warning in the app's log. A closure that throws or reads something other than a finite number within range is left out of that tick, with a warning.
+
 ## Canary
 
 `POST /api/agent/canary`, from the queue worker that ran the canary a tick dispatched. It is the one report that goes through the queue, since the queue is what it tests. The canary is tried once: it is not retried when the worker fails or PingPong is down, so every canary reports back at most once.

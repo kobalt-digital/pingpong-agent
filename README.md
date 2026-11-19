@@ -75,6 +75,31 @@ Set `PINGPONG_ENDPOINT` only to point the app at a local or staging PingPong. It
 
 The tick runs every minute. Set `PINGPONG_TICK_MINUTES` to tick less often on one environment, for example `5` on acceptance. The value must divide 60 (1, 2, 3, 4, 5, 6, 10, 12, 15, 20 or 30); any other value logs a warning and ticks every minute. Each tick carries its interval, so PingPong can tell a slower environment from a late tick.
 
+## Metrics
+
+An app can report numbers of its own, such as orders waiting or how far an import lags behind. Register each one once, in a service provider, with a closure that reads it:
+
+```php
+use KobaltDigital\PingPong\PingPong;
+
+public function boot(): void
+{
+    PingPong::metric('orders.pending', fn () => Order::pending()->count());
+    PingPong::metric('import.lag', fn () => Import::lagInSeconds(), unit: 'seconds');
+}
+```
+
+The Agent reads every metric once per tick, on the server that ticks, and PingPong charts it on the Monitor. Nothing in a request or a job sends a metric, so the closure runs as often as the tick does, no matter how busy the app is. Keep it as cheap as the other signals: a count on an indexed column, not a report.
+
+The rules keep the data clean:
+
+- A name is lower case words split by dots, at most 64 characters: `orders.pending`, `queue.import_wait`. A name is a series, so put no ids or customers in it.
+- A unit is `count` (the default), `percent`, `ms`, `seconds` or `bytes`.
+- An app reports at most 20 metrics. Registering a name again replaces it.
+- A value is an integer or a float, finite and at most `1e15` either side of zero.
+
+A name, unit or registration outside these rules is ignored with a warning in the log. A closure that throws or reads anything else is left out of that tick with a warning. Neither ever breaks the app or the tick. PingPong checks the same rules again, and keeps at most 50 different names per Monitor.
+
 ## Switching it off
 
 Set `PINGPONG_ENABLED=false` to silence the Agent without removing the key, for example on a local machine that has a copy of the production `.env`. The Agent then sends no handshake and adds nothing to the schedule.
@@ -100,6 +125,7 @@ The Agent is also silent while the app runs its unit tests (`APP_ENV=testing`), 
   - **Host.** How long the machine has been up, whether it waits for a reboot and which packages asked for it (Debian and Ubuntu), and how many package updates and security updates wait (Ubuntu's update-notifier, read in English only, else `apt list --upgradable` on Debian and a minimal Ubuntu). Left out where none of it can be read.
 - **App.** The app's environment (`APP_ENV`), and whether it is in maintenance or debug mode.
 - **PM2.** Every process PM2 runs for the scheduler's user, with its status, restarts, uptime and memory. Left out when PM2 is not installed. No PM2 command runs while no daemon does, so the Agent never starts one; the list is then empty. The environment PM2 keeps per process is never sent.
+- **Metrics.** The app's own numbers, registered with `PingPong::metric()` (see [Metrics](#metrics)). Left out while the app registered none.
 - **Flare.** Whether an exception would reach Flare: which client is installed (`spatie/laravel-flare` or `spatie/laravel-ignition`), whether it has a key, whether reporting is on and the exception handler or log stack hands exceptions to it, and whether the Flare daemon answers when the app sends through it. Once an hour, and right away after the key changes, the Agent asks Flare whether it accepts the key by posting an empty report, which Flare drops without creating an error. Only the first 8 characters of a hash of the key are sent. Left out when no Flare client is installed.
 
 These are raw numbers. PingPong decides what counts as a problem. A check that fails, for example because the database is down, is reported in the tick as a fact rather than thrown into the app. A signal the server cannot provide (memory on macOS, queue backlog on Redis) is simply left out.

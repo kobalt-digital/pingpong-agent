@@ -7,12 +7,13 @@ use Illuminate\Support\Facades\Log;
 use KobaltDigital\PingPong\Contracts\Collector;
 use KobaltDigital\PingPong\Contracts\MachineSignal;
 use KobaltDigital\PingPong\Host;
+use KobaltDigital\PingPong\Metrics;
 use Throwable;
 use UnexpectedValueException;
 
 class CollectSignals
 {
-    public function __construct(private Application $app, private Host $host) {}
+    public function __construct(private Application $app, private Host $host, private Metrics $metrics) {}
 
     /** @return array<string, mixed> */
     public function execute(): array
@@ -51,6 +52,14 @@ class CollectSignals
             [$name, $signal] = $collected;
 
             $signals[$name] = $signal;
+        }
+
+        /* Not a configured collector: an app that published its config before
+           metrics existed still sends what it registered. */
+        $metrics = $this->metrics->read();
+
+        if ($metrics !== null) {
+            $signals['metrics'] = ['values' => $metrics];
         }
 
         return $signals;
