@@ -7,8 +7,7 @@ it('reads the url, key and state directory', function () {
 
     expect($config->url)->toBe('https://pingpong.example')
         ->and($config->key)->toBe('pp_machine_abc')
-        ->and($config->stateDirectory)->toBe('/var/lib/x')
-        ->and($config->du)->toBeNull();
+        ->and($config->stateDirectory)->toBe('/var/lib/x');
 });
 
 it('keeps the state in the default directory when the file names none', function () {
@@ -24,11 +23,10 @@ it('refuses a file without a url or key', function (string $json) {
     'not a url' => ['{"url": "ftp://x", "key": "k"}'],
 ])->throws(RuntimeException::class);
 
-it('takes the mode and the roots of the sites from the file', function () {
-    $config = Config::parse('{"url": "https://pingpong.example", "key": "k", "mode": "system", "roots": ["/srv/sites", "relative", 3]}', '/default');
+it('takes the mode from the file', function () {
+    $config = Config::parse('{"url": "https://pingpong.example", "key": "k", "mode": "system"}', '/default');
 
     expect($config->system)->toBeTrue()
-        ->and($config->roots)->toBe(['/srv/sites'])
         ->and(Config::parse('{"url": "https://pingpong.example", "key": "k", "mode": "user"}', '/default', system: true)->system)->toBeFalse()
         ->and(Config::parse('{"url": "https://pingpong.example", "key": "k"}', '/default', system: true)->system)->toBeTrue();
 });

@@ -1,9 +1,8 @@
 # PingPong machine agent
 
 One small program per machine that tells PingPong how the machine itself is
-doing: its load, memory, CPU, disk and pending updates, which Unix user runs
-the processes that keep it busy, and how much room every site and database
-takes. It runs outside every Laravel app, from cron, as one PHP archive with
+doing: its load, memory, CPU, disk and pending updates, and which Unix user
+runs the processes that keep it busy. It runs outside every Laravel app, from cron, as one PHP archive with
 nothing else to install: no Composer, no vendor directory. It needs PHP 8.2
 or newer on the command line.
 
@@ -36,19 +35,13 @@ sends under it.
 | What it remembers between runs | `/var/lib/pingpong-machine` |
 | Cron | `/etc/cron.d/pingpong-machine`: `tick` every minute and `self-update` once a day, both as the system user `pingpong-machine`, never as root |
 
-It runs as the unprivileged user `pingpong-machine`. To measure sites in home
-directories that are closed to others (Forge's site isolation), it gets a copy
-of `du` with the capability to read every file (`cap_dac_read_search`),
-owned by root and executable only by root and that user. That reaches further
-than folder sizes, which is why nothing else runs it. Without `setcap`
-(package `libcap2-bin`) those sites are not measured. The first scan of the
-sites waits for the first run of cron, so the installer does not sit through
-it.
+It runs as the unprivileged user `pingpong-machine`. Versions before 1.1.0
+also installed a copy of `du` that could read every file, to measure the
+sites. Running the installer again removes it.
 
 **Without root** (shared hosting) it installs for you alone, in
 `~/.local/lib/pingpong-machine`, `~/.config/pingpong-machine` and your crontab.
-It then sees only your own processes (when `/proc` hides the others) and
-measures only your home directory. Every user of a shared host can install one
+It then sees only your own processes (when `/proc` hides the others). Every user of a shared host can install one
 with the server's key; PingPong keeps them apart by Unix user under that
 server.
 
@@ -86,39 +79,14 @@ Reading the process table costs about 45 microseconds a process (26 ms for
 600 processes); each process's `status` file, for its swap, is only read while
 the machine swaps.
 
-**Once an hour, the sizes** to `POST /api/machine/sites`, after the tick and
-in a request of its own: every home directory and site under `/home` and
-`/var/www` (your home directory without root), two levels deep, plus the
-folders that grow on their own at any depth (`storage/logs`, `storage/app`,
-`wp-content/uploads`, `releases`), at most 400, each with its owner. Room left
-of the 400 goes to the largest folders deeper down from 100 MB
-(`releases/20261117/vendor`), never one in or under a hidden folder
-(`.git`, `.ssh`, `.config`), so what fills a site opens folder by folder.
-And every database by the size of its folder in `/var/lib/mysql`.
-
-`du` is the expensive part: it looks at every file, 8 to 17 microseconds
-each, so a server with a million files takes 8 to 20 seconds. To keep that
-from hurting the sites:
-
-- it runs at the lowest CPU priority (`nice 19`) and, where the IO scheduler
-  honours it, the idle IO class (`ionice -c3`);
-- every folder right under a root gets its own `du`, of at most 5 minutes,
-  and the whole scan stops after 15; a folder it ran out of time on is sent
-  as unmeasured, and the rest still arrives;
-- network and FUSE filesystems (NFS, CIFS, sshfs) are skipped, since `du`
-  can hang on one that stops answering;
-- it waits while the machine is busy (IO pressure above 10%, or more load
-  than cores), for six hours at most;
-- a lock keeps two scans from ever running at once.
-
-While PingPong has a disk Finding open for the server it asks for the sizes
-in its answer to the tick, and gets them at most every 15 minutes.
+It never walks the files on a disk. Measuring every site and database with
+`du` did, once an hour, and on a server with millions of files that cost
+minutes of disk and CPU, so 1.1.0 stopped doing it.
 
 ## Commands
 
 ```bash
 php pingpong-machine.phar tick         # read and send; cron runs this every minute
-php pingpong-machine.phar sites        # measure the sites now
 php pingpong-machine.phar self-update  # replace the phar with the one of the newest release
 php pingpong-machine.phar version
 ```

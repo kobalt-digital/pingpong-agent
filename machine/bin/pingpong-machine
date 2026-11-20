@@ -2,12 +2,10 @@
 <?php
 
 /*
- * The machine agent of PingPong: reads a machine's load, memory, disk and
- * processes and the size of its sites, and sends them to PingPong.
+ * The machine agent of PingPong: reads a machine's load, memory, disks and
+ * processes, and sends them to PingPong.
  *
  *   pingpong-machine tick         read and send, from cron every minute
- *                                 (--without-sites: leave the hourly scan to the next run)
- *   pingpong-machine sites        measure the sites now
  *   pingpong-machine self-update  replace this phar with the newest one
  *   pingpong-machine version
  */
@@ -19,7 +17,6 @@ use KobaltDigital\PingPong\Machine\Config;
 use KobaltDigital\PingPong\Machine\ProcessReport;
 use KobaltDigital\PingPong\Machine\ProcessTable;
 use KobaltDigital\PingPong\Machine\Runner;
-use KobaltDigital\PingPong\Machine\SiteSizes;
 use KobaltDigital\PingPong\Machine\State;
 use KobaltDigital\PingPong\Machine\Updater;
 use KobaltDigital\PingPong\Machine\Users;
@@ -38,7 +35,6 @@ if (! class_exists(Agent::class)) {
 
 $arguments = is_array($_SERVER['argv'] ?? null) ? $_SERVER['argv'] : [];
 $command = $arguments[1] ?? 'help';
-$withoutSites = in_array('--without-sites', $arguments, true);
 
 if ($command === 'version') {
     echo Agent::VERSION, "\n";
@@ -58,8 +54,8 @@ if ($command === 'self-update') {
     exit(in_array($outcome, ['updated', 'current'], true) ? 0 : 1);
 }
 
-if (! in_array($command, ['tick', 'sites'], true)) {
-    fwrite(STDERR, "Usage: pingpong-machine tick|sites|self-update|version\n");
+if ($command !== 'tick') {
+    fwrite(STDERR, "Usage: pingpong-machine tick|self-update|version\n");
     exit($command === 'help' ? 0 : 1);
 }
 
@@ -79,31 +75,12 @@ $agent = new Agent(
     new Vitals(new Host, $runner),
     new ProcessTable,
     new ProcessReport($users),
-    new SiteSizes($runner, $users),
-    $runner,
     $users,
 );
 
-if ($command === 'sites') {
-    $sent = $agent->sites();
-    echo match ($sent) {
-        true => "Sent the sizes of the sites.\n",
-        false => "Measured the sites, but PingPong did not take them.\n",
-        null => "Another run is measuring the sites, or du is missing.\n",
-    };
-    exit($sent === false ? 1 : 0);
-}
-
-$tick = $agent->tick();
-
-if (! $tick['sent']) {
+if (! $agent->tick()) {
     fwrite(STDERR, "PingPong did not take the tick.\n");
     exit(1);
-}
-
-/* The installer leaves the first scan to cron, so it does not sit through one. */
-if (! $withoutSites && $agent->sitesDue($tick['measure_sites'], $tick['busy'])) {
-    $agent->sites();
 }
 
 exit(0);

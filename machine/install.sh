@@ -8,9 +8,9 @@
 # Run straight from GitHub, pass --url and --key yourself.
 #
 # As root (a Forge server) it installs for the whole machine: a system user
-# pingpong-machine runs it from cron every minute, and a copy of du that may
-# read every home directory measures the sites. Without root (shared hosting)
-# it installs for you alone, in your home directory and your crontab.
+# pingpong-machine runs it from cron every minute. Without root (shared
+# hosting) it installs for you alone, in your home directory and your
+# crontab.
 #
 # The key can also come from PINGPONG_KEY, so it stays out of your shell
 # history.
@@ -116,17 +116,9 @@ if [ "$(id -u)" -eq 0 ]; then
     chown root:pingpong-machine "$CONFIG/config.json"
     chmod 0640 "$CONFIG/config.json"
 
-    # A du that may read every file, so the agent can measure home
-    # directories closed to others without running as root. That reaches
-    # further than folder sizes (du can print what it reads in its errors),
-    # so only root and pingpong-machine may run it, and it stays root's.
-    install -m 0750 -g pingpong-machine "$(command -v du)" "$LIBRARY/du"
-
-    if command -v setcap >/dev/null; then
-        setcap cap_dac_read_search+ep "$LIBRARY/du"
-    else
-        echo "setcap is missing (apt install libcap2-bin): sites in home directories closed to others are not measured." >&2
-    fi
+    # Versions before 1.1.0 measured the sites with a copy of du that could
+    # read every file. Nothing uses it any more, so it should not stay.
+    rm -f "$LIBRARY/du"
 
     OOM_CRON=""
     if command -v journalctl >/dev/null; then
@@ -167,7 +159,7 @@ CRON
     chmod 0644 /etc/cron.d/pingpong-machine
 
     echo "Installed for the whole machine. Sending the first tick..."
-    runuser -u pingpong-machine -- "$PHP" "$AGENT/pingpong-machine.phar" tick --without-sites && echo "PingPong took it. The sites are measured by the next run of cron."
+    runuser -u pingpong-machine -- "$PHP" "$AGENT/pingpong-machine.phar" tick && echo "PingPong took it."
 else
     LIBRARY="$HOME/.local/lib/pingpong-machine"
     CONFIG="$HOME/.config/pingpong-machine"
@@ -185,5 +177,5 @@ else
     } | crontab -
 
     echo "Installed for $(id -un). Sending the first tick..."
-    "$PHP" "$LIBRARY/pingpong-machine.phar" tick --without-sites && echo "PingPong took it. The sites are measured by the next run of cron."
+    "$PHP" "$LIBRARY/pingpong-machine.phar" tick && echo "PingPong took it."
 fi

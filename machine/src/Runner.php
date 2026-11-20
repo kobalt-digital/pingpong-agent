@@ -4,8 +4,8 @@ namespace KobaltDigital\PingPong\Machine;
 
 /**
  * Runs a program without a shell, in the C locale, and gives up on it after a
- * timeout. Output is read line by line, so a program that prints a lot (`du`
- * over a whole home directory) is filtered as it goes instead of held whole.
+ * timeout. Output is read line by line, so a program that prints a lot is
+ * filtered as it goes instead of held whole.
  */
 class Runner
 {
