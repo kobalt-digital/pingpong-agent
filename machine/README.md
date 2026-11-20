@@ -62,6 +62,12 @@ OOM kills and the agent reports them with its minute tick.
 - the machine: load, memory, CPU time, pressure stall information, and the
   free space and inodes of `/` (of your home directory without root), read
   exactly as the Laravel agent reads them;
+- every local disk (`disks`): each filesystem on a disk of the machine
+  (ext4, xfs, btrfs, zfs and the like) once, by its shortest mount point,
+  with its type, free space, size and inodes, at most 32. Memory filesystems,
+  overlays, snaps and network or FUSE mounts are left out. The filesystem
+  keeps these numbers itself, so reading them costs nothing however many
+  files a disk holds;
 - the host: uptime, a reboot it waits for, pending updates (Ubuntu's
   update-notifier, else `apt list --upgradable`, so Debian too) and, while
   there are any, the packages by name (`apt list --upgradable`, run again

@@ -78,3 +78,77 @@ it('counts nothing where apt has no lists to compare against, as in a container 
     expect($host)->toMatchArray(['updates_pending' => null, 'updates_security' => null, 'update_packages' => null])
         ->and($runner->asked)->toBe(0);
 });
+
+/** Answers `df -iP` with the given output, and keeps what it was asked. */
+class FakeDfRunner extends Runner
+{
+    /** @var list<list<string>> */
+    public array $commands = [];
+
+    public function __construct(private string $output) {}
+
+    public function find(string $name): ?string
+    {
+        return $name === 'df' ? '/bin/df' : null;
+    }
+
+    public function run(array $command, int $timeoutSeconds, ?callable $onLine = null, string $separator = "\n"): ?array
+    {
+        $this->commands[] = $command;
+
+        return ['exit' => 0, 'output' => $this->output, 'timed_out' => false];
+    }
+}
+
+function mountsFile(string $contents): string
+{
+    $file = tempnam(sys_get_temp_dir(), 'mounts');
+    file_put_contents($file, $contents);
+
+    return $file;
+}
+
+it('reports every local disk once, by its shortest mount point', function () {
+    $data = sys_get_temp_dir().'/pingpong-data disk-'.bin2hex(random_bytes(4));
+    mkdir($data);
+    $escaped = str_replace(' ', '\\040', $data);
+
+    $mounts = mountsFile(implode("\n", [
+        '/dev/sda1 / ext4 rw,relatime 0 0',
+        '/dev/sda1 /srv/bound ext4 rw,relatime 0 0',
+        'tmpfs /run tmpfs rw,nosuid 0 0',
+        'overlay /var/lib/docker/overlay2/x/merged overlay rw 0 0',
+        '/dev/loop3 /snap/core/1 squashfs ro 0 0',
+        'nas:/backups /mnt/backups nfs4 rw 0 0',
+        "/dev/sdb1 {$escaped} xfs rw 0 0",
+        '/dev/sdc1 /does/not/exist ext4 rw 0 0',
+    ]));
+    $runner = new FakeDfRunner(implode("\n", [
+        'Filesystem      Inodes  IUsed   IFree IUse% Mounted on',
+        '/dev/sda1      6553600 400000 6153600    7% /',
+        "/dev/sdb1       1000000    10  999990    1% {$data}",
+    ]));
+
+    $disks = (new Vitals(new FakeHost, $runner, mounts: $mounts))->disks();
+
+    expect(array_column($disks, 'mount'))->toBe(['/', $data])
+        ->and(array_column($disks, 'type'))->toBe(['ext4', 'xfs'])
+        ->and($disks[0]['inodes_total'])->toBe(6553600)
+        ->and($disks[1]['inodes_free'])->toBe(999990)
+        ->and($disks[0]['total_bytes'])->toBeGreaterThan(0)
+        ->and($runner->commands)->toBe([['/bin/df', '-iP', '/', '/does/not/exist', $data]]);
+});
+
+it('reports no disks where none is local', function () {
+    $mounts = mountsFile("tmpfs /run tmpfs rw 0 0\nnas:/x /mnt nfs rw 0 0\n");
+
+    expect((new Vitals(new FakeHost, new FakeDfRunner(''), mounts: $mounts))->disks())->toBeNull();
+});
+
+it('leaves out the inodes of a filesystem that keeps no count', function () {
+    expect((new Vitals(new FakeHost, new Runner))->parseInodesByMount(implode("\n", [
+        'Filesystem Inodes IUsed IFree IUse% Mounted on',
+        '/dev/sda2       0     0     0     - /data',
+        '/dev/sda1     100    40    60   40% /',
+    ])))->toBe(['/' => ['total' => 100, 'free' => 60]]);
+});

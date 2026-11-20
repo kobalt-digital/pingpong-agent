@@ -68,6 +68,7 @@ it('sends who it is, the machine and its processes in one tick', function () {
     expect($sent)->toBeTrue()
         ->and($client->posts[0]['path'])->toBe('api/machine/tick')
         ->and($payload)->toHaveKeys(['schema', 'version', 'server', 'machine_id', 'os_name', 'kernel', 'cores', 'unix_user', 'mode', 'sent_at', 'signals', 'host', 'processes'])
+        ->and($payload['signals']['disks'][0]['mount'])->toBe('/')
         ->and($payload['sent_at'])->toBe('1970-01-01T00:16:40Z')
         ->and($payload['processes']['process_count'])->toBe(1)
         ->and($payload['processes']['users'][0]['names'])->toBe([['name' => 'php', 'count' => 1]]);
