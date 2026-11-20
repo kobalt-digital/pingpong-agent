@@ -15,8 +15,7 @@ use RuntimeException;
  *
  * `PINGPONG_MACHINE_CONFIG` names another file, for tests and odd setups.
  * Besides `url` and `key` the file may name `mode` (`system` or `user`,
- * which otherwise follows where the file is) and `roots`, the folders the
- * sites live in when that is not `/home` and `/var/www`.
+ * which otherwise follows where the file is).
  */
 final class Config
 {
@@ -34,10 +33,7 @@ final class Config
         public readonly string $url,
         public readonly string $key,
         public readonly string $stateDirectory,
-        public readonly ?string $du = null,
         public readonly bool $system = false,
-        /** @var list<string>|null */
-        public readonly ?array $roots = null,
     ) {}
 
     public static function load(): self
@@ -80,11 +76,9 @@ final class Config
         }
 
         $state = is_string($values['state_dir'] ?? null) && $values['state_dir'] !== '' ? $values['state_dir'] : $defaultState;
-        $du = is_string($values['du'] ?? null) && $values['du'] !== '' ? $values['du'] : null;
         $mode = $values['mode'] ?? null;
-        $roots = is_array($values['roots'] ?? null) ? array_values(array_filter($values['roots'], fn (mixed $root): bool => is_string($root) && str_starts_with($root, '/'))) : null;
 
-        return new self(rtrim($url, '/'), $key, rtrim($state, '/'), $du, $mode === 'system' || ($mode !== 'user' && $system), $roots);
+        return new self(rtrim($url, '/'), $key, rtrim($state, '/'), $mode === 'system' || ($mode !== 'user' && $system));
     }
 
     public static function file(): string

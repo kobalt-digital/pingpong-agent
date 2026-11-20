@@ -9,7 +9,7 @@ use KobaltDigital\PingPong\Tests\TestCase;
 
 uses(TestCase::class)->in(__DIR__);
 
-/* The machine agent reads /proc and runs du and df: it runs on Linux only. */
+/* The machine agent reads /proc and runs df: it runs on Linux only. */
 uses()->beforeEach(function () {
     if (PHP_OS_FAMILY === 'Windows') {
         $this->markTestSkipped('The machine agent runs on Linux only.');
@@ -175,7 +175,7 @@ function useUnwritableStorage(): void
     app()->useStoragePath($file);
 }
 
-/* The machine agent's tests share a fake /proc and a fake du. */
+/* The machine agent's tests share a fake /proc. */
 
 /**
  * A line of /proc/<pid>/stat with the fields the table reads: flags (9),
@@ -208,39 +208,4 @@ function fakeProc(array $processes): string
     }
 
     return $proc;
-}
-
-/**
- * A stand-in for du that prints the given lines under the folder it is
- * asked about, the way du does: a size in kilobytes, a tab and the path,
- * children before their parents. Asked about the slow folder, it then
- * hangs.
- */
-function fakeDu(string $output, ?string $slowFolder = null): string
-{
-    $script = tempnam(sys_get_temp_dir(), 'du');
-    $data = $script.'.out';
-    file_put_contents($data, $output);
-    file_put_contents($script, <<<SH
-    #!/bin/sh
-    for last; do :; done
-    awk -F '\t' -v p="\$last" '\$2 == p || index(\$2, p "/") == 1' '{$data}' | tr '\\n' '\\000'
-    if [ "\$last" = "{$slowFolder}" ]; then sleep 5; fi
-
-    SH);
-    chmod($script, 0755);
-
-    return $script;
-}
-
-/** A folder with the given folders in it. */
-function siteRoot(array $folders): string
-{
-    $root = sys_get_temp_dir().'/pingpong-sites-'.bin2hex(random_bytes(4));
-
-    foreach ($folders as $folder) {
-        mkdir("{$root}/{$folder}", 0755, true);
-    }
-
-    return $root;
 }

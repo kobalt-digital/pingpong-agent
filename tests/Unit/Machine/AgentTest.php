@@ -7,7 +7,6 @@ use KobaltDigital\PingPong\Machine\Config;
 use KobaltDigital\PingPong\Machine\ProcessReport;
 use KobaltDigital\PingPong\Machine\ProcessTable;
 use KobaltDigital\PingPong\Machine\Runner;
-use KobaltDigital\PingPong\Machine\SiteSizes;
 use KobaltDigital\PingPong\Machine\State;
 use KobaltDigital\PingPong\Machine\Users;
 use KobaltDigital\PingPong\Machine\Vitals;
@@ -37,21 +36,19 @@ class RecordingClient extends Client
     }
 }
 
-function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $du = null, ?string $oomJournal = null, bool $system = false, ?string $passwd = null): Agent
+function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $oomJournal = null, bool $system = false, ?string $passwd = null): Agent
 {
     $runner = new Runner;
     $users = $passwd === null ? new Users : new Users($passwd, usePosix: false);
     $proc ??= fakeProc([10 => ['stat' => statLine(10, 'php', 100, 0, 100, 10)]]);
 
     return new Agent(
-        new Config('https://pingpong.test', 'pp_machine_test', $stateDirectory, $du, $system),
+        new Config('https://pingpong.test', 'pp_machine_test', $stateDirectory, $system),
         $client,
         new State($stateDirectory),
         $oomJournal === null ? new Vitals(new Host, $runner) : new Vitals(new Host, $runner, $oomJournal),
         new ProcessTable($proc),
         new ProcessReport($users),
-        new SiteSizes($runner, $users),
-        $runner,
         $users,
     );
 }
@@ -62,15 +59,16 @@ function stateDirectory(): string
 }
 
 it('sends who it is, the machine and its processes in one tick', function () {
-    $client = new RecordingClient(body: ['status' => 'recorded', 'measure_sites' => true]);
+    $client = new RecordingClient;
 
-    $tick = machineAgent($client, stateDirectory())->tick(1000.0);
+    $sent = machineAgent($client, stateDirectory())->tick(1000.0);
 
     $payload = $client->posts[0]['payload'];
 
-    expect($tick)->toMatchArray(['sent' => true, 'measure_sites' => true])
+    expect($sent)->toBeTrue()
         ->and($client->posts[0]['path'])->toBe('api/machine/tick')
         ->and($payload)->toHaveKeys(['schema', 'version', 'server', 'machine_id', 'os_name', 'kernel', 'cores', 'unix_user', 'mode', 'sent_at', 'signals', 'host', 'processes'])
+        ->and($payload['signals']['disks'][0]['mount'])->toBe('/')
         ->and($payload['sent_at'])->toBe('1970-01-01T00:16:40Z')
         ->and($payload['processes']['process_count'])->toBe(1)
         ->and($payload['processes']['users'][0]['names'])->toBe([['name' => 'php', 'count' => 1]]);
@@ -156,72 +154,8 @@ it('measures the CPU of the second tick against the first', function () {
         ->and($client->posts[1]['payload']['processes']['cpu_seconds_total'])->toBe(6.0);
 });
 
-it('does not ask for the sites when PingPong refused the tick', function () {
-    $tick = machineAgent(new RecordingClient(401, ['message' => 'Unknown key'] + ['measure_sites' => true]), stateDirectory())->tick();
-
-    expect($tick)->toMatchArray(['sent' => false, 'measure_sites' => false]);
-});
-
-it('measures the sites once an hour, or after a quarter when PingPong asks', function () {
-    $state = stateDirectory();
-    $agent = machineAgent(new RecordingClient, $state, du: fakeDu(''));
-
-    expect($agent->sitesDue(false, now: 1000.0))->toBeTrue();
-
-    $agent->sites(1000.0);
-
-    expect($agent->sitesDue(false, now: 1000.0 + 3599))->toBeFalse()
-        ->and($agent->sitesDue(true, now: 1000.0 + 899))->toBeFalse()
-        ->and($agent->sitesDue(true, now: 1000.0 + 900))->toBeTrue()
-        ->and($agent->sitesDue(false, now: 1000.0 + 3600))->toBeTrue()
-        ->and(machineAgent(new RecordingClient, $state)->sitesDue(false, now: 1000.0 + 60))->toBeFalse();
-});
-
-it('waits with the sites while the machine is busy, for six hours at most', function () {
-    $state = stateDirectory();
-    $agent = machineAgent(new RecordingClient, $state, du: fakeDu(''));
-    $agent->sites(1000.0);
-
-    expect($agent->sitesDue(true, busy: true, now: 1000.0 + 3600))->toBeFalse()
-        ->and($agent->sitesDue(false, busy: true, now: 1000.0 + 6 * 3600))->toBeTrue();
-});
-
-it('calls a machine busy that waits on its disk or has more load than cores', function (array $signals, bool $busy) {
-    $cores = (new Host)->cores() ?? 1;
-
-    expect(machineAgent(new RecordingClient, stateDirectory())->busy([
-        'load' => isset($signals['load']) ? ['1m' => 0.0, '5m' => $signals['load'] * $cores, '15m' => 0.0] : null,
-        'pressure' => isset($signals['io']) ? ['io_some' => $signals['io']] : null,
-    ]))->toBe($busy);
-})->with([
-    'quiet' => [['load' => 0.3, 'io' => 1.0], false],
-    'waiting on its disk' => [['load' => 0.3, 'io' => 25.0], true],
-    'more load than cores' => [['load' => 1.5], true],
-    'nothing known' => [[], false],
-]);
-
-it('sends the sizes of the sites in a request of their own', function () {
-    $client = new RecordingClient;
-
-    $sent = machineAgent($client, stateDirectory(), du: fakeDu(''))->sites(1000.0);
-
-    expect($sent)->toBeTrue()
-        ->and($client->posts[0]['path'])->toBe('api/machine/sites')
-        ->and($client->posts[0]['payload'])->toHaveKeys(['server', 'unix_user', 'sites', 'complete', 'unmeasured', 'databases', 'duration_ms']);
-});
-
-it('never measures the sites twice at once', function () {
-    $state = stateDirectory();
-    mkdir($state);
-    $lock = fopen("{$state}/sites.lock", 'c');
-    flock($lock, LOCK_EX);
-
-    $client = new RecordingClient;
-
-    expect(machineAgent($client, $state, du: fakeDu(''))->sites())->toBeNull()
-        ->and($client->posts)->toBe([]);
-
-    flock($lock, LOCK_UN);
+it('says so when PingPong refused the tick', function () {
+    expect(machineAgent(new RecordingClient(401, ['message' => 'Unknown key']), stateDirectory())->tick())->toBeFalse();
 });
 
 it('tells PingPong in the first tick that gets through how long it could not reach it, and why', function () {
@@ -251,30 +185,4 @@ it('counts a tick PingPong refused as reached', function () {
     machineAgent($client, $state)->tick(1060.0);
 
     expect($client->posts[0]['payload']['connectivity'])->toBeNull();
-});
-
-it('keeps what the ticks saved while the sites were being measured', function () {
-    $state = stateDirectory();
-    $agent = machineAgent(new RecordingClient, $state, du: fakeDu(''));
-
-    /* A tick that ran in the minutes the scan took could not reach PingPong. */
-    machineAgent(new RecordingClient(0), $state)->tick(1000.0);
-
-    $agent->sites(1030.0);
-
-    $client = new RecordingClient;
-    machineAgent($client, $state)->tick(1060.0);
-
-    expect($client->posts[0]['payload']['connectivity']['failed_attempts'])->toBe(1);
-});
-
-it('never has a tick write back an older time of the last scan', function () {
-    $state = stateDirectory();
-
-    /* A tick that loaded its state before the scan ended saves after it. */
-    $tick = machineAgent(new RecordingClient, $state);
-    machineAgent(new RecordingClient, $state, du: fakeDu(''))->sites(1000.0);
-    $tick->tick(1010.0);
-
-    expect(machineAgent(new RecordingClient, $state)->sitesDue(false, now: 1060.0))->toBeFalse();
 });

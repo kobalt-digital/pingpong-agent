@@ -27,7 +27,7 @@ function fakePingPong(): array
     }
     http_response_code((int) ltrim($_SERVER['REQUEST_URI'], '/') ?: 200);
     header('Content-Type: application/json');
-    echo json_encode(['status' => 'recorded', 'measure_sites' => true]);
+    echo json_encode(['status' => 'recorded']);
     PHP);
 
     $socket = stream_socket_server('tcp://127.0.0.1:0');
@@ -63,7 +63,7 @@ it('posts JSON with the machine key and reads the answer', function (bool $useCu
         $answer = $client->post('201', ['server' => 'web-1']);
         $request = json_decode(trim(file_get_contents($pingPong['requests'])), true);
 
-        expect($answer)->toBe(['status' => 201, 'body' => ['status' => 'recorded', 'measure_sites' => true]])
+        expect($answer)->toBe(['status' => 201, 'body' => ['status' => 'recorded']])
             ->and($request)->toBe(['uri' => '/201', 'authorization' => 'Bearer pp_machine_secret', 'body' => ['server' => 'web-1']])
             ->and($client->post('422', [])['status'])->toBe(422);
     } finally {
