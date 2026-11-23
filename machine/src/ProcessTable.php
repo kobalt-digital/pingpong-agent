@@ -4,13 +4,13 @@ namespace KobaltDigital\PingPong\Machine;
 
 /**
  * Reads every process from `/proc`: who runs it, how much CPU it has used
- * since it started and how much memory it holds. Never the command line,
- * which can carry passwords and keys; only the name the kernel keeps for it,
- * and for php-fpm the name of its pool, which is all that tells the sites of
- * one server apart.
+ * since it started and how much memory it holds. Command lines are only
+ * inspected locally to derive a stable group name (`php-fpm`, `php artisan
+ * <subcommand>`, `node <script>`, `python <script>`); flags, inline code and
+ * secrets never leave the machine.
  *
- * About 45 microseconds a process: one `stat` file per process and the owner
- * of its directory, plus its `status` file only while the machine swaps.
+ * One `stat` file per process, its `cmdline` for non-kernel processes and the
+ * owner of its directory, plus its `status` file only while the machine swaps.
  */
 class ProcessTable
 {
@@ -19,6 +19,9 @@ class ProcessTable
 
     /** The memory page Linux uses on x86 and most ARM machines. */
     public const PAGE_BYTES = 4096;
+
+    /** Maximum length of a normalized process name PingPong accepts. */
+    public const MAX_NAME_LENGTH = 64;
 
     /** Set in the flags of a kernel thread (PF_KTHREAD). */
     private const KERNEL_THREAD_FLAG = 0x00200000;
@@ -57,11 +60,8 @@ class ProcessTable
                 continue;
             }
 
-            $name = $process['name'];
-
-            if (str_starts_with($name, 'php-fpm')) {
-                $name = $this->fpmName((string) @file_get_contents("{$directory}/cmdline")) ?? $name;
-            }
+            $cmdline = $process['kernel'] ? '' : (string) @file_get_contents("{$directory}/cmdline");
+            $name = $this->normalizeName($process['name'], $cmdline);
 
             $swap = null;
 
@@ -118,24 +118,257 @@ class ProcessTable
     }
 
     /**
-     * "php-fpm: pool desprekern" names its pool, "php-fpm: master process
-     * (/etc/php/8.3/fpm/php-fpm.conf)" is the master. Nothing else of the
-     * command line is kept.
+     * Normalizes a process's `comm` and `cmdline` to a stable group name
+     * without `/` or control characters, capped at 64 characters.
      */
-    public function fpmName(string $cmdline): ?string
+    public function normalizeName(string $comm, string $cmdline = ''): string
     {
-        $cmdline = str_replace("\0", ' ', $cmdline);
+        $cleanComm = self::sanitizeName($comm);
+        $trimmedCmdline = ltrim(str_replace("\0", ' ', $cmdline));
 
-        if (preg_match('/^php-fpm[^:]*: pool (\S+)/', $cmdline, $match) === 1) {
-            /* PingPong keeps a name to 64 characters; a pool named after a long domain must not cost the tick. */
-            return 'php-fpm: '.substr($match[1], 0, 55);
+        if (str_starts_with($cleanComm, 'php-fpm') || str_starts_with($trimmedCmdline, 'php-fpm')) {
+            return $this->fpmName($trimmedCmdline);
         }
 
-        if (preg_match('/^php-fpm[^:]*: master/', $cmdline) === 1) {
+        $tokens = $this->cmdlineTokens($cmdline);
+        $binary = $tokens === [] ? '' : basename($tokens[0]);
+
+        if (str_starts_with($binary, 'php-fpm')) {
+            return $this->fpmName($trimmedCmdline);
+        }
+
+        if (preg_match('/^php(\d+(\.\d+)?)?$/', $binary) === 1) {
+            $artisan = $this->artisanName($tokens);
+
+            if ($artisan !== null) {
+                return $artisan;
+            }
+        }
+
+        if ($binary === 'node') {
+            $script = $this->scriptArgument(
+                $tokens,
+                ['-e', '--eval', '-p', '--print'],
+                ['-r', '--require', '--import', '--loader', '--env-file', '--conditions', '-C', '--title'],
+            );
+
+            return $script === null ? 'node' : self::sanitizeName("node {$script}");
+        }
+
+        if (preg_match('/^python(\d+(\.\d+)?)?$/', $binary) === 1) {
+            $script = $this->scriptArgument(
+                $tokens,
+                ['-c', '-m', '--command'],
+                ['-W', '-X', '--check-hash-based-pycs'],
+            );
+
+            return $script === null
+                ? ($cleanComm !== '' ? $cleanComm : 'python')
+                : self::sanitizeName("python {$script}");
+        }
+
+        return $cleanComm !== '' ? $cleanComm : 'unknown';
+    }
+
+    /**
+     * Preserves `php-fpm: {pool}` so PingPong can suggest which Monitor a Unix
+     * user belongs to, and `php-fpm: master` for the master process. Nothing
+     * else of the command line is kept.
+     */
+    private function fpmName(string $trimmedCmdline): string
+    {
+        if (preg_match('/^php-fpm[^:]*: pool (\S+)/', $trimmedCmdline, $match) === 1) {
+            $pool = self::sanitizeName($match[1]);
+
+            if ($pool !== '') {
+                return self::sanitizeName("php-fpm: {$pool}");
+            }
+        }
+
+        if (preg_match('/^php-fpm[^:]*: master/', $trimmedCmdline) === 1) {
             return 'php-fpm: master';
         }
 
+        return 'php-fpm';
+    }
+
+    /**
+     * Strips control characters, replaces `/` with `-`, trims whitespace, and
+     * caps the result at `MAX_NAME_LENGTH` characters.
+     */
+    public static function sanitizeName(string $name): string
+    {
+        $clean = (string) preg_replace('/[\x00-\x1F\x7F]/', '', $name);
+        $clean = str_replace('/', '-', $clean);
+        $clean = trim($clean);
+
+        if ($clean === '') {
+            return '';
+        }
+
+        $capped = function_exists('mb_substr')
+            ? mb_substr($clean, 0, self::MAX_NAME_LENGTH, 'UTF-8')
+            : substr($clean, 0, self::MAX_NAME_LENGTH);
+
+        return rtrim($capped);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function cmdlineTokens(string $cmdline): array
+    {
+        if ($cmdline === '') {
+            return [];
+        }
+
+        if (str_contains($cmdline, "\0")) {
+            return array_values(array_filter(
+                explode("\0", $cmdline),
+                fn (string $token): bool => $token !== '',
+            ));
+        }
+
+        $trimmed = trim($cmdline);
+
+        if ($trimmed === '') {
+            return [];
+        }
+
+        return preg_split('/\s+/', $trimmed) ?: [];
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    private function artisanName(array $tokens): ?string
+    {
+        $count = count($tokens);
+
+        for ($i = 1; $i < $count; $i++) {
+            $token = $tokens[$i];
+
+            if (in_array($token, ['-r', '-B', '-R', '-F', '-E'], true)) {
+                return null;
+            }
+
+            if (in_array($token, ['-d', '-c', '-z'], true)) {
+                $i++;
+
+                continue;
+            }
+
+            if ($token === '-f' || str_starts_with($token, '-')) {
+                continue;
+            }
+
+            if ($token === 'artisan' || str_ends_with($token, '/artisan')) {
+                $subcommand = $tokens[$i + 1] ?? null;
+
+                if ($subcommand !== null && $subcommand !== '' && ! str_starts_with($subcommand, '-')) {
+                    $normalized = self::sanitizeName("php artisan {$subcommand}");
+
+                    return $normalized === '' ? null : $normalized;
+                }
+            }
+
+            return null;
+        }
+
         return null;
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     * @param  list<string>  $inlineFlags
+     * @param  list<string>  $valueFlags
+     */
+    private function scriptArgument(array $tokens, array $inlineFlags, array $valueFlags): ?string
+    {
+        $count = count($tokens);
+        $endOfFlags = false;
+
+        for ($i = 1; $i < $count; $i++) {
+            $token = $tokens[$i];
+
+            if (! $endOfFlags) {
+                if ($token === '--') {
+                    $endOfFlags = true;
+
+                    continue;
+                }
+
+                if (in_array($token, $valueFlags, true)) {
+                    $i++;
+
+                    continue;
+                }
+
+                if ($this->isAttachedShortValueFlag($token, $valueFlags)) {
+                    continue;
+                }
+
+                if ($this->isInlineCodeFlag($token, $inlineFlags)) {
+                    return null;
+                }
+
+                if (str_starts_with($token, '-')) {
+                    continue;
+                }
+            }
+
+            $base = basename($token);
+
+            if ($base === '' || $base === '.' || $base === '..') {
+                return null;
+            }
+
+            return $base;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $valueFlags
+     */
+    private function isAttachedShortValueFlag(string $token, array $valueFlags): bool
+    {
+        if (! str_starts_with($token, '-') || str_starts_with($token, '--') || strlen($token) <= 2) {
+            return false;
+        }
+
+        return in_array(substr($token, 0, 2), $valueFlags, true);
+    }
+
+    /**
+     * @param  list<string>  $inlineFlags
+     */
+    private function isInlineCodeFlag(string $token, array $inlineFlags): bool
+    {
+        if (! str_starts_with($token, '-') || $token === '-') {
+            return false;
+        }
+
+        if (str_starts_with($token, '--')) {
+            foreach ($inlineFlags as $flag) {
+                if (str_starts_with($flag, '--') && ($token === $flag || str_starts_with($token, $flag.'='))) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        $bundle = substr($token, 1);
+
+        foreach ($inlineFlags as $flag) {
+            if (! str_starts_with($flag, '--') && strlen($flag) === 2 && str_contains($bundle, $flag[1])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function parseSwap(string $status): ?int
