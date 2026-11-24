@@ -2,6 +2,16 @@
 
 All notable changes to `pingpong-agent` will be documented in this file.
 
+## v1.10.0 - 2026-11-20
+
+The machine agent (1.1.0) no longer measures sites and databases with `du`. Walking every file under `/home` and `/var/www` once an hour cost minutes of disk and CPU on servers with millions of files. Instead every tick reports each local disk by its mount point (`signals.disks`: type, free space, size and inodes), read from the filesystem itself at no cost, so PingPong judges a separate `/var/lib/mysql` or `/home` volume, not only `/`. ([#37](https://github.com/kobalt-digital/pingpong-agent/pull/37))
+
+- The `sites` command and the `du` and `roots` config keys are gone.
+- The installer no longer installs the setcap copy of `du`; running it again removes the old one.
+- Servers pick this up with their nightly `self-update`. The Laravel agent is unchanged.
+
+**Full Changelog**: https://github.com/kobalt-digital/pingpong-agent/compare/v1.9.0...v1.10.0
+
 ## v1.2.0 - 2026-11-05
 
 This release adds visibility into Flare integration health and the environment each application runs in. It also strengthens static analysis and adapts the release workflows to a protected `main` branch.
