@@ -73,13 +73,15 @@ OOM kills and the agent reports them with its minute tick.
   there are any, the packages by name (`apt list --upgradable`, run again
   only when apt's lists or the installed packages changed);
 - the processes per Unix user: how many, the CPU seconds they used since the
-  previous tick, their memory and swap, and their four most common names.
-  Only the eight busiest users, the four largest and the two that swap most
-  are sent, plus the totals. Kernel threads count as the user `kernel`.
+  previous tick, their memory and swap, and their top 4 normalized process
+  groups with per-process count, CPU seconds and RSS memory (plus any
+  `watch_users` and `watch_processes` PingPong asks for, up to 128 users and
+  32 process groups per user). Kernel threads count as the user `kernel`.
 
-Of a process only the name the kernel keeps for it is read, never its command
-line, which can carry passwords and keys. php-fpm is the one exception: its
-pool name, which tells the sites of one server apart.
+Command lines are only inspected locally to normalize `php-fpm: {pool}`,
+`php-fpm: master`, `php artisan <subcommand>`, `node <script>` and
+`python <script>` into stable group names; flags, inline code and secrets
+never leave the machine.
 
 Reading the process table costs about 45 microseconds a process (26 ms for
 600 processes); each process's `status` file, for its swap, is only read while

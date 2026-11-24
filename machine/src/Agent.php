@@ -43,7 +43,16 @@ class Agent
 
         if ($table !== null && $uptime !== null) {
             $previous = $this->state->get('processes');
-            $built = $this->processReport->build($table, $this->validSnapshot($previous), $now, $uptime, $seesEveryone);
+            $built = $this->processReport->build(
+                $table,
+                $this->validSnapshot($previous),
+                $now,
+                $uptime,
+                $seesEveryone,
+                $this->validWatchUsers($this->state->get('watch_users')),
+                $this->validWatchProcesses($this->state->get('watch_processes')),
+                $this->users->current(),
+            );
             $processes = $built['report'];
             $this->state->set('processes', $built['snapshot']);
         }
@@ -69,10 +78,85 @@ class Agent
             $this->state->set('unix_users_sent_at', (int) $now);
         }
 
+        if ($sent) {
+            $this->rememberWatchRules($response['body']);
+        }
+
         $this->rememberReach($response, $now);
         $this->state->save();
 
         return $sent;
+    }
+
+    /**
+     * Keeps the users and processes PingPong asks this machine to report even
+     * when idle or stopped. Omitted fields reset the corresponding watch list
+     * to empty, matching PingPong omitting empty arrays and keeping older
+     * servers compatible.
+     *
+     * @param  array<array-key, mixed>  $body
+     */
+    private function rememberWatchRules(array $body): void
+    {
+        $this->state->set('watch_users', $this->validWatchUsers($body['watch_users'] ?? null));
+        $this->state->set('watch_processes', $this->validWatchProcesses($body['watch_processes'] ?? null));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function validWatchUsers(mixed $users): array
+    {
+        if (! is_array($users)) {
+            return [];
+        }
+
+        $valid = [];
+
+        foreach ($users as $user) {
+            if (! is_string($user)) {
+                continue;
+            }
+
+            $clean = trim((string) preg_replace('/[\x00-\x1F\x7F]/', '', $user));
+
+            if ($clean === '' || strlen($clean) > ProcessTable::MAX_NAME_LENGTH) {
+                continue;
+            }
+
+            $valid[$clean] = $clean;
+        }
+
+        return array_values($valid);
+    }
+
+    /**
+     * @return list<array{user: string, process: string}>
+     */
+    private function validWatchProcesses(mixed $processes): array
+    {
+        if (! is_array($processes)) {
+            return [];
+        }
+
+        $valid = [];
+
+        foreach ($processes as $entry) {
+            if (! is_array($entry) || ! is_string($entry['user'] ?? null) || ! is_string($entry['process'] ?? null)) {
+                continue;
+            }
+
+            $user = trim((string) preg_replace('/[\x00-\x1F\x7F]/', '', $entry['user']));
+            $process = ProcessTable::sanitizeName($entry['process']);
+
+            if ($user === '' || strlen($user) > ProcessTable::MAX_NAME_LENGTH || $process === '') {
+                continue;
+            }
+
+            $valid["{$user}\0{$process}"] = ['user' => $user, 'process' => $process];
+        }
+
+        return array_values($valid);
     }
 
     /**
