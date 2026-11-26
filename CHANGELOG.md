@@ -2,6 +2,16 @@
 
 All notable changes to `pingpong-agent` will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- **Update history from the machine agent (1.11.0).** Every tick sends the Package changes dpkg logged since the last tick PingPong accepted (`host.package_changes`: install, upgrade, downgrade, remove and purge, with both versions, the machine's time with its UTC offset and who ran it: `unattended-upgrade`, the user apt names, or unknown) and the kernel's `boot_id`, so PingPong records what was installed and when the machine rebooted. A tick PingPong refuses is sent again, a rotated `dpkg.log` loses no line, and a new install starts at the end of the log. Needs PingPong with Update history; older PingPong ignores both keys. ([#39](https://github.com/kobalt-digital/pingpong-agent/issues/39))
+
+### Fixed
+
+- **The machine agent names its release.** `pingpong-machine version` and the `version` of every machine tick now say the release (1.11.0) instead of 1.1.0, and the release workflow attaches no phar whose version differs from the tag.
+
 ## v1.2.0 - 2026-11-05
 
 This release adds visibility into Flare integration health and the environment each application runs in. It also strengthens static analysis and adapts the release workflows to a protected `main` branch.
