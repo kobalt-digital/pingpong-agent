@@ -1,5 +1,6 @@
 <?php
 
+use KobaltDigital\PingPong\Machine\AptHistory;
 use KobaltDigital\PingPong\Machine\PackageLog;
 
 function packageLogDirectory(): string
@@ -8,6 +9,11 @@ function packageLogDirectory(): string
     mkdir($directory);
 
     return $directory;
+}
+
+function packageLog(string $log, string $timezone = 'UTC'): PackageLog
+{
+    return new PackageLog($log, new AptHistory(dirname($log).'/history.log'), $timezone);
 }
 
 function appendDpkg(string $log, string $lines): void
@@ -35,7 +41,7 @@ it('starts at the end of the log, so a new install sends no history', function (
     $directory = packageLogDirectory();
     appendDpkg("{$directory}/dpkg.log", aptUpgradeOfTwo());
 
-    $read = (new PackageLog("{$directory}/dpkg.log", timezone: 'UTC'))->read(null);
+    $read = packageLog("{$directory}/dpkg.log")->read(null);
 
     expect($read['changes'])->toBe([])
         ->and($read['cursor'])->toBe(['inode' => fileinode("{$directory}/dpkg.log"), 'offset' => filesize("{$directory}/dpkg.log")]);
@@ -44,7 +50,7 @@ it('starts at the end of the log, so a new install sends no history', function (
 it('sends what an apt upgrade of two packages changed once, with versions and the machine time', function () {
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
-    $packageLog = new PackageLog($log, timezone: 'Europe/Amsterdam');
+    $packageLog = packageLog($log, 'Europe/Amsterdam');
     appendDpkg($log, "2026-11-25 10:00:00 startup archives unpack\n");
     $start = $packageLog->read(null)['cursor'];
 
@@ -64,7 +70,7 @@ it('keeps installs, downgrades, removals and purges and passes over what changes
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     touch($log);
-    $packageLog = new PackageLog($log, timezone: 'Europe/Amsterdam');
+    $packageLog = packageLog($log, 'Europe/Amsterdam');
     $start = $packageLog->read(null)['cursor'];
 
     appendDpkg($log, <<<'TXT'
@@ -92,7 +98,7 @@ it('finishes the rotated log before it starts the new one, losing no line and se
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     touch($log);
-    $packageLog = new PackageLog($log, timezone: 'UTC');
+    $packageLog = packageLog($log);
     $start = $packageLog->read(null)['cursor'];
 
     appendDpkg($log, "2026-11-30 23:58:00 upgrade curl:amd64 8.5.0-2 8.5.0-3\n");
@@ -114,7 +120,7 @@ it('reads a log that was truncated from its start', function () {
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     appendDpkg($log, aptUpgradeOfTwo());
-    $packageLog = new PackageLog($log, timezone: 'UTC');
+    $packageLog = packageLog($log);
     $end = $packageLog->read(null)['cursor'];
 
     $handle = fopen($log, 'r+');
@@ -129,7 +135,7 @@ it('sends at most a batch a tick and the rest in the ticks after', function () {
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     touch($log);
-    $packageLog = new PackageLog($log, timezone: 'UTC');
+    $packageLog = packageLog($log);
     $start = $packageLog->read(null)['cursor'];
 
     foreach (range(1, PackageLog::MAX_CHANGES + 50) as $number) {
@@ -149,7 +155,7 @@ it('stays in the rotated log while the batch is full', function () {
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     touch($log);
-    $packageLog = new PackageLog($log, timezone: 'UTC');
+    $packageLog = packageLog($log);
     $start = $packageLog->read(null)['cursor'];
 
     foreach (range(1, PackageLog::MAX_CHANGES + 1) as $number) {
@@ -171,7 +177,7 @@ it('leaves a line dpkg is still writing for the next tick', function () {
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     touch($log);
-    $packageLog = new PackageLog($log, timezone: 'UTC');
+    $packageLog = packageLog($log);
     $start = $packageLog->read(null)['cursor'];
 
     appendDpkg($log, '2026-11-26 06:00:00 upgrade git:amd64 1:2.43-1');
@@ -184,14 +190,14 @@ it('leaves a line dpkg is still writing for the next tick', function () {
 });
 
 it('reads nothing where dpkg keeps no log', function () {
-    expect((new PackageLog('/does/not/exist/dpkg.log'))->read(['inode' => 1, 'offset' => 0]))->toBeNull();
+    expect(packageLog('/does/not/exist/dpkg.log')->read(['inode' => 1, 'offset' => 0]))->toBeNull();
 });
 
 it('starts at the end again when what it kept is no cursor', function (mixed $cursor) {
     $directory = packageLogDirectory();
     appendDpkg("{$directory}/dpkg.log", aptUpgradeOfTwo());
 
-    expect((new PackageLog("{$directory}/dpkg.log", timezone: 'UTC'))->read($cursor)['changes'])->toBe([]);
+    expect(packageLog("{$directory}/dpkg.log")->read($cursor)['changes'])->toBe([]);
 })->with([
     'nothing' => [null],
     'a string' => ['garbage'],
@@ -204,23 +210,40 @@ it('writes the time in the zone the machine runs in', function () {
     touch($log);
     symlink('/usr/share/zoneinfo/America/New_York', "{$directory}/localtime");
     file_put_contents("{$directory}/timezone", "Asia/Tokyo\n");
-    $start = (new PackageLog($log))->read(null)['cursor'];
+    $start = packageLog($log)->read(null)['cursor'];
     appendDpkg($log, "2026-11-26 06:00:00 upgrade git:amd64 1:2.43-1 1:2.43-2\n");
 
-    $fromLink = new PackageLog($log, localtime: "{$directory}/localtime", timezoneFile: "{$directory}/timezone");
-    $fromFile = new PackageLog($log, localtime: "{$directory}/none", timezoneFile: "{$directory}/timezone");
-    $neither = new PackageLog($log, localtime: "{$directory}/none", timezoneFile: "{$directory}/none");
+    $fromLink = new PackageLog($log, new AptHistory("{$directory}/history.log"), localtime: "{$directory}/localtime", timezoneFile: "{$directory}/timezone");
+    $fromFile = new PackageLog($log, new AptHistory("{$directory}/history.log"), localtime: "{$directory}/none", timezoneFile: "{$directory}/timezone");
+    $neither = new PackageLog($log, new AptHistory("{$directory}/history.log"), localtime: "{$directory}/none", timezoneFile: "{$directory}/none");
 
     expect($fromLink->read($start)['changes'][0]['at'])->toBe('2026-11-26T06:00:00-05:00')
         ->and($fromFile->read($start)['changes'][0]['at'])->toBe('2026-11-26T06:00:00+09:00')
         ->and($neither->read($start)['changes'][0]['at'])->toBe('2026-11-26T06:00:00+00:00');
 });
 
+it('says who made each change from the apt run it fell in', function () {
+    $directory = packageLogDirectory();
+    $log = "{$directory}/dpkg.log";
+    touch($log);
+    $packageLog = packageLog($log);
+    $start = $packageLog->read(null)['cursor'];
+
+    appendDpkg($log, aptUpgradeOfTwo()."2026-11-26 06:20:00 install hello:amd64 <none> 2.10-3\n");
+    file_put_contents("{$directory}/history.log", "Start-Date: 2026-11-26  06:12:03\nCommandline: /usr/bin/unattended-upgrade\nEnd-Date: 2026-11-26  06:12:07\n");
+
+    expect(array_column($packageLog->read($start)['changes'], 'by', 'package'))->toBe([
+        'openssl:amd64' => 'unattended-upgrade',
+        'libssl3t64:amd64' => 'unattended-upgrade',
+        'hello:amd64' => null,
+    ]);
+});
+
 it('sends an upgrade to an older version as a downgrade and a reinstall as an upgrade', function () {
     $directory = packageLogDirectory();
     $log = "{$directory}/dpkg.log";
     touch($log);
-    $packageLog = new PackageLog($log, timezone: 'UTC');
+    $packageLog = packageLog($log);
     $start = $packageLog->read(null)['cursor'];
 
     appendDpkg($log, "2026-11-26 06:00:00 upgrade nginx:amd64 1.26.3-3+deb13u1 1.26.3-3\n2026-11-26 06:00:01 upgrade git:amd64 1:2.43-1 1:2.43-1\n");

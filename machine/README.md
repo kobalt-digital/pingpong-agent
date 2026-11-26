@@ -75,7 +75,8 @@ OOM kills and the agent reports them with its minute tick.
   only when apt's lists or the installed packages changed);
 - the Package changes: every install, upgrade, downgrade, removal and purge
   dpkg logged in `/var/log/dpkg.log` since the last tick PingPong accepted,
-  with both versions and the time, at most 200 a tick. It keeps how far
+  with both versions, the time and who ran it (unattended upgrades or the
+  user apt names in `/var/log/apt/history.log`), at most 200 a tick. It keeps how far
   PingPong took them, so a tick that does not get through sends them again,
   and a rotated log loses no line. A first install starts at the end of the
   log;

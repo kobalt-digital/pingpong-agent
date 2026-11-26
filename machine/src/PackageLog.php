@@ -25,7 +25,8 @@ use Exception;
  * `MAX_CHANGES`; the rest follow in the next ticks.
  *
  * dpkg writes its own local time without a zone, so every change is sent
- * with the offset the machine's timezone had at that moment.
+ * with the offset the machine's timezone had at that moment, and with who
+ * made it as `AptHistory` tells.
  *
  * @phpstan-type LoggedChange array{local: string, action: string, package: string, from: ?string, to: ?string}
  * @phpstan-type PackageChange array{at: string, action: string, package: string, from: ?string, to: ?string, by: ?string}
@@ -42,6 +43,7 @@ class PackageLog
 
     public function __construct(
         private string $dpkgLog = '/var/log/dpkg.log',
+        private AptHistory $aptHistory = new AptHistory,
         private ?string $timezone = null,
         private string $localtime = '/etc/localtime',
         private string $timezoneFile = '/etc/timezone',
@@ -81,7 +83,7 @@ class PackageLog
                 $rotated = $this->finishRotated($cursor, $changes, $bytesLeft);
 
                 if ($rotated !== null) {
-                    return $this->withTimes($changes, $rotated);
+                    return $this->toSend($changes, $rotated);
                 }
 
                 $start = 0;
@@ -89,7 +91,7 @@ class PackageLog
 
             $offset = $this->readLines($log, $start, $changes, $bytesLeft, finished: false);
 
-            return $this->withTimes($changes, ['inode' => $inode, 'offset' => $offset]);
+            return $this->toSend($changes, ['inode' => $inode, 'offset' => $offset]);
         } finally {
             fclose($log);
         }
@@ -200,16 +202,17 @@ class PackageLog
      * @param  Cursor  $cursor
      * @return array{changes: list<PackageChange>, cursor: Cursor}
      */
-    private function withTimes(array $changes, array $cursor): array
+    private function toSend(array $changes, array $cursor): array
     {
         if ($changes === []) {
             return ['changes' => [], 'cursor' => $cursor];
         }
 
         $timezone = $this->machineTimezone();
+        $who = $this->aptHistory->who(array_column($changes, 'local'));
         $sent = [];
 
-        foreach ($changes as $change) {
+        foreach ($changes as $index => $change) {
             $at = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $change['local'], $timezone);
 
             if ($at === false) {
@@ -222,7 +225,7 @@ class PackageLog
                 'package' => $change['package'],
                 'from' => $change['from'],
                 'to' => $change['to'],
-                'by' => null,
+                'by' => $who[$index] ?? null,
             ];
         }
 

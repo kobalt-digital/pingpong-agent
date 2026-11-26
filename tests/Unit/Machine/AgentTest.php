@@ -2,6 +2,7 @@
 
 use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\Machine\Agent;
+use KobaltDigital\PingPong\Machine\AptHistory;
 use KobaltDigital\PingPong\Machine\Client;
 use KobaltDigital\PingPong\Machine\Config;
 use KobaltDigital\PingPong\Machine\PackageLog;
@@ -51,7 +52,7 @@ function machineAgent(RecordingClient $client, string $stateDirectory, ?string $
         new ProcessTable($proc),
         new ProcessReport($users),
         $users,
-        new PackageLog($dpkgLog ?? "{$stateDirectory}/no-dpkg.log", timezone: 'UTC'),
+        new PackageLog($dpkgLog ?? "{$stateDirectory}/no-dpkg.log", new AptHistory("{$stateDirectory}/history.log"), 'UTC'),
     );
 }
 

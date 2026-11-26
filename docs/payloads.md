@@ -479,7 +479,7 @@ The Agent refuses a name or unit outside these rules when it is registered, and 
 | `host.package_changes[].package` | string | The package as dpkg logs it, with its architecture: `openssl:amd64` |
 | `host.package_changes[].from` | string or null | The version before. `null` for an install |
 | `host.package_changes[].to` | string or null | The version after. `null` for a removal or purge |
-| `host.package_changes[].by` | string or null | Who ran it: `null` for unknown |
+| `host.package_changes[].by` | string or null | Who ran it, from the apt run in `/var/log/apt/history.log` (or `history.log.1.gz`, read with zlib, for a run before its rotation) whose `Start-Date` and `End-Date` hold `at`: `unattended-upgrade` when its `Commandline` names it, else the Unix user of its `Requested-By` (apt run through sudo or pkexec). `null` when unknown: a bare `dpkg -i`, root running apt without sudo, or a history that cannot be read |
 
 The agent keeps the inode of `dpkg.log` and the byte after the last line PingPong accepted in its state file, and reads from there: a tick that does not get a `2xx` leaves it, so the next tick sends the same changes again. Only lines that change a version count; `configure`, `trigproc`, `status` and `startup` lines are passed over. A tick carries at most 200 changes and reads at most 1 MiB of the log; the rest follow in the next ticks. When logrotate moved the log aside, the agent finishes `dpkg.log.1` from where it was before it reads the new log from its start, and a log that shrank is read from its start. The first tick of a new install starts at the end of the log: history begins there.
 
