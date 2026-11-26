@@ -466,6 +466,14 @@ The app's own numbers, registered with `PingPong::metric()` and read once per ti
 
 The Agent refuses a name or unit outside these rules when it is registered, and a registration beyond 20, with a warning in the app's log. A closure that throws or reads something other than a finite number within range is left out of that tick, with a warning.
 
+## Machine tick
+
+`POST /api/machine/tick`, from the [machine agent](../machine/README.md) every minute. Its `host` object carries the keys of [`signals.host`](#signalshost), read the same way, and these besides:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `host.boot_id` | string or null | `/proc/sys/kernel/random/boot_id`, lower case: the kernel makes it once per boot, so a new one is a reboot, however short. `null` where it cannot be read (not Linux) |
+
 ## Canary
 
 `POST /api/agent/canary`, from the queue worker that ran the canary a tick dispatched. It is the one report that goes through the queue, since the queue is what it tests. The canary is tried once: it is not retried when the worker fails or PingPong is down, so every canary reports back at most once.

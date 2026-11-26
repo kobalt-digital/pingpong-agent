@@ -68,7 +68,8 @@ OOM kills and the agent reports them with its minute tick.
   overlays, snaps and network or FUSE mounts are left out. The filesystem
   keeps these numbers itself, so reading them costs nothing however many
   files a disk holds;
-- the host: uptime, a reboot it waits for, pending updates (Ubuntu's
+- the host: uptime, the id the kernel gives this boot (a new one is a
+  reboot), a reboot it waits for, pending updates (Ubuntu's
   update-notifier, else `apt list --upgradable`, so Debian too) and, while
   there are any, the packages by name (`apt list --upgradable`, run again
   only when apt's lists or the installed packages changed);

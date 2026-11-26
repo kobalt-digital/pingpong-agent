@@ -33,6 +33,7 @@ class Vitals
         private Runner $runner,
         private string $oomJournal = '/etc/pingpong-machine/oom-kills.jsonl',
         private string $mounts = '/proc/mounts',
+        private string $bootIdFile = '/proc/sys/kernel/random/boot_id',
     ) {}
 
     /**
@@ -66,7 +67,7 @@ class Vitals
      * Ubuntu's update-notifier counts the updates; where it does not run
      * (Debian, a minimal Ubuntu) apt counts them, as `HostState` does.
      *
-     * @return array{uptime_seconds: ?int, reboot_required: ?bool, reboot_packages: ?list<string>, updates_pending: ?int, updates_security: ?int, update_packages: ?list<array{name: string, version: ?string, security: bool}>}
+     * @return array{uptime_seconds: ?int, boot_id: ?string, reboot_required: ?bool, reboot_packages: ?list<string>, updates_pending: ?int, updates_security: ?int, update_packages: ?list<array{name: string, version: ?string, security: bool}>}
      */
     public function host(State $state): array
     {
@@ -76,12 +77,24 @@ class Vitals
 
         return [
             'uptime_seconds' => $this->host->uptime(),
+            'boot_id' => $this->bootId(),
             'reboot_required' => $this->host->rebootRequired(),
             'reboot_packages' => $this->host->rebootPackages(),
             'updates_pending' => $updates['pending'] ?? null,
             'updates_security' => $updates['security'] ?? null,
             'update_packages' => ($updates['pending'] ?? 0) > 0 ? ($upgradable['packages'] ?? null) : null,
         ];
+    }
+
+    /**
+     * The kernel's id of this boot, made the first time it is read and the
+     * same until the next boot: a new one is a reboot, however short.
+     */
+    public function bootId(): ?string
+    {
+        $bootId = strtolower(trim((string) @file_get_contents($this->bootIdFile)));
+
+        return preg_match('/^[0-9a-f-]{1,64}$/', $bootId) === 1 ? $bootId : null;
     }
 
     /**
