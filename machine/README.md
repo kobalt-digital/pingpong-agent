@@ -73,6 +73,12 @@ OOM kills and the agent reports them with its minute tick.
   update-notifier, else `apt list --upgradable`, so Debian too) and, while
   there are any, the packages by name (`apt list --upgradable`, run again
   only when apt's lists or the installed packages changed);
+- the Package changes: every install, upgrade, downgrade, removal and purge
+  dpkg logged in `/var/log/dpkg.log` since the last tick PingPong accepted,
+  with both versions and the time, at most 200 a tick. It keeps how far
+  PingPong took them, so a tick that does not get through sends them again,
+  and a rotated log loses no line. A first install starts at the end of the
+  log;
 - the processes per Unix user: how many, the CPU seconds they used since the
   previous tick, their memory and swap, and their top 4 normalized process
   groups with per-process count, CPU seconds and RSS memory (plus any

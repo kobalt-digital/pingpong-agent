@@ -473,6 +473,15 @@ The Agent refuses a name or unit outside these rules when it is registered, and 
 | Key | Type | Meaning |
 |---|---|---|
 | `host.boot_id` | string or null | `/proc/sys/kernel/random/boot_id`, lower case: the kernel makes it once per boot, so a new one is a reboot, however short. `null` where it cannot be read (not Linux) |
+| `host.package_changes` | array or null | What dpkg changed since the last tick PingPong accepted, oldest first, read from `/var/log/dpkg.log`. `null` where that log cannot be read. See below |
+| `host.package_changes[].at` | string | When dpkg logged it, ISO 8601 with the offset the machine's timezone had then (`/etc/localtime`, else `/etc/timezone`, else UTC), such as `2026-11-26T06:12:04+01:00` |
+| `host.package_changes[].action` | string | `install`, `upgrade`, `downgrade`, `remove` or `purge` |
+| `host.package_changes[].package` | string | The package as dpkg logs it, with its architecture: `openssl:amd64` |
+| `host.package_changes[].from` | string or null | The version before. `null` for an install |
+| `host.package_changes[].to` | string or null | The version after. `null` for a removal or purge |
+| `host.package_changes[].by` | string or null | Who ran it: `null` for unknown |
+
+The agent keeps the inode of `dpkg.log` and the byte after the last line PingPong accepted in its state file, and reads from there: a tick that does not get a `2xx` leaves it, so the next tick sends the same changes again. Only lines that change a version count; `configure`, `trigproc`, `status` and `startup` lines are passed over. A tick carries at most 200 changes and reads at most 1 MiB of the log; the rest follow in the next ticks. When logrotate moved the log aside, the agent finishes `dpkg.log.1` from where it was before it reads the new log from its start, and a log that shrank is read from its start. The first tick of a new install starts at the end of the log: history begins there.
 
 ## Canary
 
