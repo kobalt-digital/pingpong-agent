@@ -12,7 +12,8 @@ namespace KobaltDigital\PingPong\Machine;
  */
 class Agent
 {
-    public const VERSION = '1.1.0';
+    /** The release that ships it, without its `v`: publishing a release whose tag differs attaches no phar. */
+    public const VERSION = '1.11.0';
 
     public const SCHEMA = 1;
 

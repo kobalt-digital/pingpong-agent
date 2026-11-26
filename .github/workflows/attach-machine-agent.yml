@@ -25,8 +25,15 @@ jobs:
         working-directory: machine/dist
         run: sha256sum -c pingpong-machine.phar.sha256
 
-      - name: Check the phar runs
-        run: php machine/dist/pingpong-machine.phar version
+      - name: Check the phar runs and names this release
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(php machine/dist/pingpong-machine.phar version)"
+          if [ "$version" != "${TAG#v}" ]; then
+            echo "::error::The phar says it is $version, the release is $TAG. Set Agent::VERSION to ${TAG#v}, rebuild the phar and release again."
+            exit 1
+          fi
 
       - name: Attach the phar to the release
         env:

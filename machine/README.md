@@ -123,7 +123,10 @@ Servers never take it from a branch. Publishing a GitHub release attaches the
 phar and its checksum of the tagged commit to it
 (`.github/workflows/attach-machine-agent.yml`), and `install.sh` and the
 nightly `self-update` take them from the newest release. A push to `main`
-therefore reaches no server until someone releases it. Before a new phar
+therefore reaches no server until someone releases it. `Agent::VERSION` is
+the version of the release that ships it, so set it to the coming tag
+(without its `v`) and rebuild the phar before tagging: the workflow attaches
+nothing to a release whose tag differs, and servers keep the phar they have. Before a new phar
 replaces the old one it has to answer `version`, so one that does not start
 stays where it is and the old one keeps reporting.
 
