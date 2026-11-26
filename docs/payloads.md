@@ -466,6 +466,23 @@ The app's own numbers, registered with `PingPong::metric()` and read once per ti
 
 The Agent refuses a name or unit outside these rules when it is registered, and a registration beyond 20, with a warning in the app's log. A closure that throws or reads something other than a finite number within range is left out of that tick, with a warning.
 
+## Machine tick
+
+`POST /api/machine/tick`, from the [machine agent](../machine/README.md) every minute. Its `host` object carries the keys of [`signals.host`](#signalshost), read the same way, and these besides:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `host.boot_id` | string or null | `/proc/sys/kernel/random/boot_id`, lower case: the kernel makes it once per boot, so a new one is a reboot, however short. `null` where it cannot be read (not Linux) |
+| `host.package_changes` | array or null | What dpkg changed since the last tick PingPong accepted, oldest first, read from `/var/log/dpkg.log`. `null` where that log cannot be read. See below |
+| `host.package_changes[].at` | string | When dpkg logged it, ISO 8601 with the offset the machine's timezone had then (`/etc/localtime`, else `/etc/timezone`, else UTC), such as `2026-11-26T06:12:04+01:00` |
+| `host.package_changes[].action` | string | `install`, `upgrade`, `downgrade`, `remove` or `purge` |
+| `host.package_changes[].package` | string | The package as dpkg logs it, with its architecture: `openssl:amd64` |
+| `host.package_changes[].from` | string or null | The version before. `null` for an install |
+| `host.package_changes[].to` | string or null | The version after. `null` for a removal or purge |
+| `host.package_changes[].by` | string or null | Who ran it, from the apt run in `/var/log/apt/history.log` (or `history.log.1.gz`, read with zlib, for a run before its rotation) whose `Start-Date` and `End-Date` hold `at`: `unattended-upgrade` when its `Commandline` names it, else the Unix user of its `Requested-By` (apt run through sudo or pkexec). `null` when unknown: a bare `dpkg -i`, root running apt without sudo, or a history that cannot be read |
+
+The agent keeps the inode of `dpkg.log` and the byte after the last line PingPong accepted in its state file, and reads from there: a tick that does not get a `2xx` leaves it, so the next tick sends the same changes again. Only lines that change a version count; `configure`, `trigproc`, `status` and `startup` lines are passed over. A tick carries at most 200 changes and reads at most 1 MiB of the log; the rest follow in the next ticks. When logrotate moved the log aside, the agent finishes `dpkg.log.1` from where it was before it reads the new log from its start, and a log that shrank is read from its start. The first tick of a new install starts at the end of the log: history begins there.
+
 ## Canary
 
 `POST /api/agent/canary`, from the queue worker that ran the canary a tick dispatched. It is the one report that goes through the queue, since the queue is what it tests. The canary is tried once: it is not retried when the worker fails or PingPong is down, so every canary reports back at most once.

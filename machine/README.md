@@ -68,10 +68,18 @@ OOM kills and the agent reports them with its minute tick.
   overlays, snaps and network or FUSE mounts are left out. The filesystem
   keeps these numbers itself, so reading them costs nothing however many
   files a disk holds;
-- the host: uptime, a reboot it waits for, pending updates (Ubuntu's
+- the host: uptime, the id the kernel gives this boot (a new one is a
+  reboot), a reboot it waits for, pending updates (Ubuntu's
   update-notifier, else `apt list --upgradable`, so Debian too) and, while
   there are any, the packages by name (`apt list --upgradable`, run again
   only when apt's lists or the installed packages changed);
+- the Package changes: every install, upgrade, downgrade, removal and purge
+  dpkg logged in `/var/log/dpkg.log` since the last tick PingPong accepted,
+  with both versions, the time and who ran it (unattended upgrades or the
+  user apt names in `/var/log/apt/history.log`), at most 200 a tick. It keeps how far
+  PingPong took them, so a tick that does not get through sends them again,
+  and a rotated log loses no line. A first install starts at the end of the
+  log;
 - the processes per Unix user: how many, the CPU seconds they used since the
   previous tick, their memory and swap, and their top 4 normalized process
   groups with per-process count, CPU seconds and RSS memory (plus any
@@ -115,7 +123,10 @@ Servers never take it from a branch. Publishing a GitHub release attaches the
 phar and its checksum of the tagged commit to it
 (`.github/workflows/attach-machine-agent.yml`), and `install.sh` and the
 nightly `self-update` take them from the newest release. A push to `main`
-therefore reaches no server until someone releases it. Before a new phar
+therefore reaches no server until someone releases it. `Agent::VERSION` is
+the version of the release that ships it, so set it to the coming tag
+(without its `v`) and rebuild the phar before tagging: the workflow attaches
+nothing to a release whose tag differs, and servers keep the phar they have. Before a new phar
 replaces the old one it has to answer `version`, so one that does not start
 stays where it is and the old one keeps reporting.
 

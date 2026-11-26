@@ -152,3 +152,24 @@ it('leaves out the inodes of a filesystem that keeps no count', function () {
         '/dev/sda1     100    40    60   40% /',
     ])))->toBe(['/' => ['total' => 100, 'free' => 60]]);
 });
+
+it('sends the id of this boot with the host facts', function () {
+    $bootId = tempnam(sys_get_temp_dir(), 'pingpong-boot-id-');
+    file_put_contents($bootId, "E2308F53-2CFE-4B1E-BB9E-8D4BEEC6F7E3\n");
+
+    $vitals = new Vitals(debianHost(hasAptLists: false), new FakeAptRunner(''), bootIdFile: $bootId);
+
+    expect($vitals->host(new State(sys_get_temp_dir().'/pingpong-machine-'.bin2hex(random_bytes(4))))['boot_id'])
+        ->toBe('e2308f53-2cfe-4b1e-bb9e-8d4beec6f7e3');
+});
+
+it('sends no boot id where the kernel has none to read', function (string $contents) {
+    $bootId = tempnam(sys_get_temp_dir(), 'pingpong-boot-id-');
+    file_put_contents($bootId, $contents);
+
+    expect((new Vitals(new FakeHost, new Runner, bootIdFile: $bootId))->bootId())->toBeNull()
+        ->and((new Vitals(new FakeHost, new Runner, bootIdFile: '/does/not/exist'))->bootId())->toBeNull();
+})->with([
+    'empty' => [''],
+    'not an id' => ["not a boot id\n"],
+]);

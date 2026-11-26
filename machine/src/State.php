@@ -4,8 +4,8 @@ namespace KobaltDigital\PingPong\Machine;
 
 /**
  * What one run leaves for the next, in one JSON file in the state directory:
- * the CPU counters of every process, when the sites were last measured and
- * the pending updates by name. A file that is missing or cannot be read is
+ * the CPU counters of every process, the pending updates by name and how
+ * far PingPong took the Package changes of `dpkg.log`. A file that is missing or cannot be read is
  * an empty state, which costs one tick without CPU figures, never the tick.
  *
  * Written to a temporary file and renamed, so a run that dies halfway never

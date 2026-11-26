@@ -2,8 +2,10 @@
 
 use KobaltDigital\PingPong\Host;
 use KobaltDigital\PingPong\Machine\Agent;
+use KobaltDigital\PingPong\Machine\AptHistory;
 use KobaltDigital\PingPong\Machine\Client;
 use KobaltDigital\PingPong\Machine\Config;
+use KobaltDigital\PingPong\Machine\PackageLog;
 use KobaltDigital\PingPong\Machine\ProcessReport;
 use KobaltDigital\PingPong\Machine\ProcessTable;
 use KobaltDigital\PingPong\Machine\Runner;
@@ -36,7 +38,7 @@ class RecordingClient extends Client
     }
 }
 
-function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $oomJournal = null, bool $system = false, ?string $passwd = null): Agent
+function machineAgent(RecordingClient $client, string $stateDirectory, ?string $proc = null, ?string $oomJournal = null, bool $system = false, ?string $passwd = null, ?string $dpkgLog = null): Agent
 {
     $runner = new Runner;
     $users = $passwd === null ? new Users : new Users($passwd, usePosix: false);
@@ -50,6 +52,7 @@ function machineAgent(RecordingClient $client, string $stateDirectory, ?string $
         new ProcessTable($proc),
         new ProcessReport($users),
         $users,
+        new PackageLog($dpkgLog ?? "{$stateDirectory}/no-dpkg.log", new AptHistory("{$stateDirectory}/history.log"), 'UTC'),
     );
 }
 
@@ -382,4 +385,29 @@ it('remains backward compatible when the server omits watch_users and watch_proc
         ->and(machineAgent($client, $state)->tick(1060.0))->toBeTrue()
         ->and((new State($state))->get('watch_users'))->toBe([])
         ->and((new State($state))->get('watch_processes'))->toBe([]);
+});
+
+it('sends the Package changes once PingPong took them, and the same batch again after a refused tick', function () {
+    $state = stateDirectory();
+    mkdir($state);
+    $dpkgLog = "{$state}/dpkg.log";
+    file_put_contents($dpkgLog, "2026-11-25 10:00:00 startup archives unpack\n");
+    $client = new RecordingClient;
+
+    machineAgent($client, $state, dpkgLog: $dpkgLog)->tick(1000.0);
+    file_put_contents($dpkgLog, "2026-11-26 06:12:04 upgrade openssl:amd64 3.0.13-0ubuntu3.4 3.0.13-0ubuntu3.5\n2026-11-26 06:12:05 upgrade curl:amd64 8.5.0-2 8.5.0-3\n", FILE_APPEND);
+    machineAgent(new RecordingClient(503), $state, dpkgLog: $dpkgLog)->tick(1060.0);
+    machineAgent($client, $state, dpkgLog: $dpkgLog)->tick(1120.0);
+    machineAgent($client, $state, dpkgLog: $dpkgLog)->tick(1180.0);
+
+    $sent = array_map(fn (array $post) => array_column($post['payload']['host']['package_changes'], 'package'), $client->posts);
+
+    expect($sent)->toBe([[], ['openssl:amd64', 'curl:amd64'], []]);
+});
+
+it('sends no Package changes where dpkg keeps no log, and still ticks', function () {
+    $client = new RecordingClient;
+
+    expect(machineAgent($client, stateDirectory())->tick(1000.0))->toBeTrue()
+        ->and($client->posts[0]['payload']['host'])->toHaveKey('package_changes', null);
 });

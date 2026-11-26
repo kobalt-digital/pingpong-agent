@@ -12,7 +12,8 @@ namespace KobaltDigital\PingPong\Machine;
  */
 class Agent
 {
-    public const VERSION = '1.1.0';
+    /** The release that ships it, without its `v`: publishing a release whose tag differs attaches no phar. */
+    public const VERSION = '1.11.0';
 
     public const SCHEMA = 1;
 
@@ -27,6 +28,7 @@ class Agent
         private ProcessTable $processTable,
         private ProcessReport $processReport,
         private Users $users,
+        private PackageLog $packageLog = new PackageLog,
     ) {}
 
     /** Whether PingPong took the tick. */
@@ -63,10 +65,12 @@ class Agent
             ? $this->users->localAccounts()
             : null;
 
+        $packageChanges = $this->packageLog->read($this->state->get('package_log'));
+
         $response = $this->client->post('api/machine/tick', [
             ...$this->envelope($now),
             'signals' => array_filter($signals, fn (mixed $signal): bool => $signal !== null),
-            'host' => $this->vitals->host($this->state),
+            'host' => [...$this->vitals->host($this->state), 'package_changes' => $packageChanges['changes'] ?? null],
             'processes' => $processes,
             'oom_kill_events' => $this->config->system ? $this->vitals->oomKills((int) $now) : [],
             'connectivity' => is_array($gap) ? $gap : null,
@@ -80,6 +84,13 @@ class Agent
 
         if ($sent) {
             $this->rememberWatchRules($response['body']);
+        }
+
+        /* A batch PingPong did not take is read again next tick. One
+           without changes loses nothing when skipped, which is how the
+           first tick keeps the end of the log it starts at. */
+        if ($packageChanges !== null && ($sent || $packageChanges['changes'] === [])) {
+            $this->state->set('package_log', $packageChanges['cursor']);
         }
 
         $this->rememberReach($response, $now);
